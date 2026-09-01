@@ -1,0 +1,24 @@
+# Local dependencies and build output
+node_modules/
+.vercel/
+dist/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Temporary files
+tmp/
+*.log
+
+# Local working notes (the readable DOCX is the submitted 1st-session result)
+docs/
+
+# Original school materials and personal activity logs
+etc/
+*.hwpx
+*.hwp
+*.pdf
+*.pptx
+

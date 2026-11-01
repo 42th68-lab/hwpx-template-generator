@@ -4,7 +4,7 @@ import { createApiHandler } from "../server.mjs";
 import { POST } from "../api/index.mjs";
 import { analyzeInputs } from "../settings-analyzer.mjs";
 import { validateHwpx } from "../hwpx-validation.mjs";
-import { previewModel } from "../document-preview.js";
+import { previewModel, renderDocumentPreview } from "../document-preview.js";
 import { checkUploadLimits, UPLOAD_LIMITS } from "../upload-limits.js";
 import { timedRequest } from '../upload-limits.js';
 import { versionWebAssets } from '../scripts/build-web.mjs';
@@ -89,4 +89,23 @@ test("public document config no longer exposes account credentials even when old
   assert.equal(Object.hasOwn(value, "supabase"), false);
   assert(!JSON.stringify(value).includes("sb_publishable_test"));
   assert(!JSON.stringify(value).includes("secret-service"));
+});
+
+
+test('requirements -> analysis API -> HWPX API -> preview renderer keeps the right column on the same sheet',async()=>{
+ const handler=createApiHandler({analysisOptions:{env:{}}}),data=new FormData();
+ data.set('requirements','A4 세로, 모든 여백 20mm, 글꼴 바탕체, 본문 10pt, 줄 간격 160%. 구성: Abstract → 서론 → 본론 → 결론 → 참고문헌\n본문 배치: 2단, 단 간격 7.04mm');
+ const analysis=await (await handler(new Request('https://test.invalid/api/analyze',{method:'POST',body:data}))).json();
+ const settings=analysis.analysis.settings;assert.equal(settings.columns.count,2);
+ const response=await handler(new Request('https://test.invalid/api/hwpx',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({settings,title:'연구 보고서',confirmed:true})}));assert.equal(response.status,200);
+ const result=await response.json();assert.equal(result.renderPlan.pages.length,1);assert((await validateHwpx(Buffer.from(result.fileBase64,'base64'))).passed);
+ // Exercise the real DOM writer without browser automation: inspect its output
+ // positions rather than merely asserting the layout planner's own values.
+ const doc={createElement(tag){return {tag,ownerDocument:doc,children:[],style:{setProperty(key,value){this[key]=value;}},dataset:{},attrs:{},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},setAttribute(key,value){this.attrs[key]=value;}};}};
+ const root=doc.createElement('main');renderDocumentPreview(root,settings,'연구 보고서',{confirmed:true,renderPlan:result.renderPlan});
+ const descendants=node=>[node,...node.children.filter(child=>typeof child==='object').flatMap(descendants)];
+ const nodes=descendants(root),sheets=nodes.filter(n=>n.className==='preview-paper preview-planned-paper');assert.equal(sheets.length,1);
+ const left=nodes.find(n=>n.textContent==='2. 서론'),right=nodes.find(n=>n.textContent==='4. 결론');
+ assert(left&&right);assert.notEqual(left.style.left,right.style.left);assert.equal(left.style.top,right.style.top);
+ assert(sheets[0].children.includes(left)&&sheets[0].children.includes(right));assert(nodes.some(n=>n.textContent==='생성 파일 기준'));
 });

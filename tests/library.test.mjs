@@ -37,7 +37,7 @@ test('sharing handler rejects missing credentials, oversized payloads and malfor
 });
 
 test('cloud save canonicalizes advanced settings through generated output without dropping them',async()=>{
- const doc=document();Object.assign(doc.settings,{columns:{count:2,gapMm:7.04,scope:'body'},headerFooterMm:{header:20,footer:10},alignment:{title:'left',body:'justify'},limits:{maxPages:2,titleMaxLines:2},sectionStyles:[{item:'목적',alignment:'right',maxLines:8}]});
+ const doc=document();doc.settings.documentOptions.numberedItems=false;Object.assign(doc.settings,{documentTitle:doc.title,typography:{titleSizePt:17,headingSizePt:12},columns:{count:2,gapMm:7.04,scope:'body'},headerFooterMm:{header:20,footer:10},alignment:{title:'left',body:'justify'},limits:{maxPages:2,titleMaxLines:2},sectionStyles:[{item:'목적',alignment:'right',maxLines:8}]});
  let stored,uploaded=false;
  const handler=createLibraryHandler({env:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEYS:'{"default":"server-secret"}',SUPABASE_PUBLISHABLE_KEYS:'{"default":"public-key"}'},fetchImpl:async(url,init)=>{
   if(url==='https://hanform.vercel.app/api/hwpx'){const {buffer,...result}=await generateHwpx(JSON.parse(init.body));return Response.json({...result,fileBase64:buffer.toString('base64')});}
@@ -47,5 +47,5 @@ test('cloud save canonicalizes advanced settings through generated output withou
   throw Error('Unexpected mock request');
  }});
  const response=await handler(new Request('https://test.invalid',{method:'POST',headers:{apikey:'public-key'},body:JSON.stringify({op:'save',payload:{...doc,storageConsent:true,publish:false,authorName:'',isAnonymous:true}})}));
- assert.equal(response.status,200);const result=await response.json();assert(uploaded);assert.equal(result.item.settings.columns.gapMm,7.04);assert.equal(stored.settings.headerFooterMm.header,20);assert.equal(stored.settings.sectionStyles[0].maxLines,8);assert.equal(stored.is_public,false);assert.equal(stored.manage_hash.length,64);assert.notEqual(stored.manage_hash,result.token);
+ assert.equal(response.status,200);const result=await response.json();assert(uploaded);assert.equal(result.item.settings.columns.gapMm,7.04);assert.equal(stored.settings.headerFooterMm.header,20);assert.equal(stored.settings.sectionStyles[0].maxLines,8);assert.equal(stored.settings.typography.titleSizePt,17);assert.equal(stored.settings.documentTitle,doc.title);assert.equal(stored.settings.documentOptions.numberedItems,false);assert.equal(stored.is_public,false);assert.equal(stored.manage_hash.length,64);assert.notEqual(stored.manage_hash,result.token);
 });

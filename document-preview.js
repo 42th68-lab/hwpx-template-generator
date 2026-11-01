@@ -19,6 +19,7 @@ export function previewModel(settings, title = "문서 양식") {
       ["용지", `${formatSetting("paper.size", settings.paper?.size)} · ${settings.paper?.orientation ? formatSetting("paper.orientation", settings.paper.orientation) : "방향 미지정 (생성 시 세로)"}`],
       ["여백 (위 / 아래 / 왼쪽 / 오른쪽)", ["top", "bottom", "left", "right"].map((side) => formatSetting(`marginsMm.${side}`, settings.marginsMm?.[side])).join(" / ")],
       ["본문 크기", formatSetting("fontSizePt", settings.fontSizePt)],
+      ["제목 / 항목 제목 크기",`${settings.typography?.titleSizePt ?? 20} / ${settings.typography?.headingSizePt ?? 14} pt`],
       ["글꼴", formatSetting("fontFamily", settings.fontFamily)],
       ["줄 간격", settings.lineSpacing?.value == null ? "미지정" : formatSetting("lineSpacing", settings.lineSpacing)],
       ["필수 항목", `${settings.requiredItems.length}개`],

@@ -125,7 +125,7 @@ test("title and line-spacing point values are not mistaken for body font size", 
   const result = await analyze("제목 16pt, 본문 10pt, 줄 간격 20pt");
   assert.equal(result.settings.fontSizePt, 10);
   assert.deepEqual(result.settings.lineSpacing, { value: 20, unit: "pt" });
-  assert(result.warnings.some((warning) => warning.type === "unparsed"));
+  assert.equal(result.settings.typography.titleSizePt,16);
 });
 
 test("ranges, missing units and examples require manual review", async () => {
@@ -255,4 +255,36 @@ test("truncated file input is disclosed", async () => {
 test("ordinary prose containing 바탕으로 is not a font condition", async () => {
   const result = await analyze("입력한 조건을 바탕으로 보고서를 만들어 줘.");
   assert.equal(result.settings.fontFamily, null);
+});
+
+
+test('role-specific typography overrides whole-document defaults for prose and attached source text',async()=>{
+ const prompt='A4 세로, 여백 20mm, 글꼴 맑은 고딕, 전체 글자 크기 11pt, 줄 간격 160%. 필수 항목: 목적, 방법, 결과. 제목 16pt, 소제목 12pt. 전체 왼쪽 정렬. 제목은 가운데 정렬. 표지와 목차를 추가해 줘. 방법은 표로 만들어 줘. 항목 번호 없이. 문서 제목은 "실험 보고서".';
+ for(const r of [await analyze(prompt),await analyze('',[{name:'안내.hwpx',text:prompt,truncated:false}])]){
+  assert.equal(r.settings.documentTitle,'실험 보고서');assert.equal(r.settings.fontSizePt,11);assert.deepEqual(r.settings.typography,{titleSizePt:16,headingSizePt:12});
+  assert.deepEqual(r.settings.alignment,{body:'left',heading:'left',title:'center'});assert.deepEqual(r.settings.requiredItems,['목적','방법','결과']);
+  assert.deepEqual(r.settings.documentOptions,{coverPage:true,contentsPage:true,tableItems:['방법'],numberedItems:false});
+  assert(!r.warnings.some(w=>['conflict','unparsed','invalid','unsupported'].includes(w.type)));
+ }
+});
+
+test('arbitrary named item sizes and contradictory role sizes retain source scope and conflicts',async()=>{
+ const r=await analyze('구성: Summary → Findings\n본문 11pt. 제목 17pt. Summary 글자 크기: 9pt. Findings 13pt.');
+ assert.equal(r.settings.fontSizePt,11);assert.equal(r.settings.typography.titleSizePt,17);
+ assert.equal(r.settings.sectionStyles.find(s=>s.item==='Summary').fontSizePt,9);assert.equal(r.settings.sectionStyles.find(s=>s.item==='Findings').fontSizePt,13);
+ const r2=await analyze('제목 16pt',[{name:'규정.pdf',text:'제목 18pt',truncated:false}]);assert.equal(r2.settings.typography?.titleSizePt,undefined);assert(r2.warnings.some(w=>w.type==='conflict'&&w.field==='typography.titleSizePt'));
+});
+
+test('options apply only to their explicit subjects; negatives and attached conflicts are not silently discarded',async()=>{
+ const r=await analyze(complete+' 표지 제외. 목차 추가. 방법은 표로 작성. 결과는 표로 작성하지 마.');
+ assert.deepEqual(r.settings.documentOptions,{coverPage:false,contentsPage:true,tableItems:['방법']});assert(!r.settings.requiredItems.includes('목차'));
+ const conflict=await analyze('표지 추가',[{name:'안내.pdf',text:'표지 제외',truncated:false}]);assert(conflict.warnings.some(w=>w.type==='conflict'&&w.field==='documentOptions.coverPage'));
+ const examples=await analyze(complete,[{name:'설명.pdf',text:'입력한 조건을 처리하는 방법을 표로 정리하는 서비스다.',truncated:false}]);assert.equal(examples.settings.documentOptions,undefined);
+});
+
+test('unmapped AI conditions require grounded evidence and unsupported formatting is surfaced',async()=>{
+ const response={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions:[],unhandled:[{sourceId:'prompt',quote:'기관 로고를 삽입해 줘',reason:'이미지 삽입은 지원하지 않음'},{sourceId:'prompt',quote:'없는 지시',reason:'가짜 조건'}]})}]}}]};
+ const r=await analyzeInputs({prompt:complete+' 기관 로고를 삽입해 줘.',files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json(response)});
+ assert(r.warnings.some(w=>w.type==='unsupported'&&w.details.some(d=>d.quote==='기관 로고를 삽입해 줘')));assert(!JSON.stringify(r).includes('가짜 조건'));
+ const table=await analyze(complete+' 방법은 5행 4열 표로 만들어 줘.');assert(table.warnings.some(w=>w.type==='unsupported'&&w.details.some(d=>d.reason.includes('행·열'))));
 });

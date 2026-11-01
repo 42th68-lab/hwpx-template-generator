@@ -25,7 +25,7 @@ export function cleanDocument(value) {
   if (value.settings.schemaVersion!==1 || problems.length) throw new Error(problems?.[0]?.message || '지원하는 문서 설정이 아닙니다.');
   const s=value.settings;
   if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test([s.fontFamily,...s.requiredItems].join(''))) throw new Error('설정에 사용할 수 없는 제어 문자가 있습니다.');
-  return {title:value.title.trim(),requirements:value.requirements,settings:{schemaVersion:1,paper:{size:s.paper.size,orientation:s.paper.orientation},marginsMm:{top:s.marginsMm.top,bottom:s.marginsMm.bottom,left:s.marginsMm.left,right:s.marginsMm.right},fontFamily:s.fontFamily,fontSizePt:s.fontSizePt,lineSpacing:{value:s.lineSpacing.value,unit:s.lineSpacing.unit},requiredItems:[...s.requiredItems],...optionalSettings(s),...(s.documentOptions?{documentOptions:{coverPage:s.documentOptions.coverPage,contentsPage:s.documentOptions.contentsPage,tableItems:[...s.documentOptions.tableItems]}}:{})}};
+  return {title:value.title.trim(),requirements:value.requirements,settings:{schemaVersion:1,paper:{size:s.paper.size,orientation:s.paper.orientation},marginsMm:{top:s.marginsMm.top,bottom:s.marginsMm.bottom,left:s.marginsMm.left,right:s.marginsMm.right},fontFamily:s.fontFamily,fontSizePt:s.fontSizePt,lineSpacing:{value:s.lineSpacing.value,unit:s.lineSpacing.unit},requiredItems:[...s.requiredItems],...optionalSettings(s),...(s.documentOptions?{documentOptions:{coverPage:s.documentOptions.coverPage,contentsPage:s.documentOptions.contentsPage,tableItems:[...s.documentOptions.tableItems],...(s.documentOptions.numberedItems!=null?{numberedItems:s.documentOptions.numberedItems}:{})}}:{})}};
 }
 export const allForms=()=>operate('readonly',store=>store.getAll());
 export const getForm=id=>operate('readonly',store=>store.get(id));

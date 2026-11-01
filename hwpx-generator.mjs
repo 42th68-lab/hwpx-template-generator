@@ -26,12 +26,13 @@ export function normalizeGenerationInput(input) {
   settings.lineSpacing = { value: typeof raw.lineSpacing?.value === "number" ? raw.lineSpacing.value : null, unit: typeof raw.lineSpacing?.unit === "string" ? raw.lineSpacing.unit : null };
   settings.requiredItems = Array.isArray(raw.requiredItems) ? raw.requiredItems.map((item) => typeof item === "string" ? item.trim() : item) : [];
   settings.documentOptions = raw.documentOptions == null ? {coverPage:false,contentsPage:false,tableItems:[]} : raw.documentOptions;
-  for (const group of ['headerFooterMm','columns','alignment','limits','sectionStyles']) if (raw[group] != null) settings[group] = raw[group];
+  for (const group of ['headerFooterMm','columns','alignment','limits','sectionStyles','typography']) if (raw[group] != null) settings[group] = raw[group];
+  if(raw.documentTitle!=null)settings.documentTitle=raw.documentTitle;
   const problems = validateSettings(settings);
   if (problems.length) throw new GenerationError(problems[0].message);
   Object.assign(settings,optionalSettings(settings));
-  settings.documentOptions={coverPage:settings.documentOptions.coverPage,contentsPage:settings.documentOptions.contentsPage,tableItems:[...new Set(settings.documentOptions.tableItems)]};
-  const title = input.title == null || input.title === "" ? "문서 양식" : input.title;
+  settings.documentOptions={coverPage:settings.documentOptions.coverPage,contentsPage:settings.documentOptions.contentsPage,tableItems:[...new Set(settings.documentOptions.tableItems)],...(settings.documentOptions.numberedItems!=null?{numberedItems:settings.documentOptions.numberedItems}:{})};
+  const title = input.title == null || input.title === "" ? (settings.documentTitle || "문서 양식") : input.title;
   if (typeof title !== "string" || !title.trim() || title.trim().length > 80 || /[\r\n]/.test(title)) throw new GenerationError("문서 제목은 한 줄, 80자 이내로 입력해 주세요.");
   if (![title, settings.fontFamily, ...settings.requiredItems, ...(settings.sectionStyles || []).map(s=>s.item)].every(isXmlText)) throw new GenerationError("제목 또는 필수 항목에 문서에 넣을 수 없는 제어 문자가 있습니다.");
   return { settings, title: title.trim() };
@@ -233,7 +234,7 @@ export async function generateHwpx(input, { stage = "layout" } = {}) {
   return {
     renderPlan: stage==="layout"?renderPlan:undefined, layoutVersion:renderPlan.version,
     buffer, fileName: safeFileName(title), validation: { ...validation, layoutVerified: false }, warnings,
-    appliedSettings: { title, requiredItems: settings.requiredItems, documentOptions:settings.documentOptions, fontFamily: settings.fontFamily, lineSpacing: settings.lineSpacing, fontSizePt: settings.fontSizePt, titleSizePt: 20, headingSizePt: 14, paper: { ...settings.paper, orientation }, marginsMm: settings.marginsMm, ...optionalSettings(settings) },
+    appliedSettings: { title, requiredItems: settings.requiredItems, documentOptions:settings.documentOptions, fontFamily: settings.fontFamily, lineSpacing: settings.lineSpacing, fontSizePt: settings.fontSizePt, titleSizePt: settings.typography?.titleSizePt ?? 20, headingSizePt: settings.typography?.headingSizePt ?? 14, paper: { ...settings.paper, orientation }, marginsMm: settings.marginsMm, ...optionalSettings(settings) },
     constraintChecks: {status:'requires-final-content',limits:settings.limits ?? {},sections:(settings.sectionStyles || []).filter(s=>s.maxLines!=null).map(s=>({item:s.item,maxLines:s.maxLines})),pageCountVerified:false,lineCountsVerified:false},
     unsupportedSettings: [],
   };

@@ -11,12 +11,12 @@ import { analyzeInputs } from "../settings-analyzer.mjs";
 export const completePrompt = "A4 세로, 모든 여백 20mm, 글꼴 맑은 고딕, 본문 10pt, 줄 간격 160%. 필수 항목: 연구 목적, 방법, 결과, 결론.";
 const analyzed = async (prompt) => (await analyzeInputs({ prompt, files: [] }, { env: {} })).settings;
 const builder = new XMLBuilder({ preserveOrder: true, ignoreAttributes: false, suppressEmptyNode: true });
-async function conditionDocument() {
+async function conditionDocument(contents=completePrompt) {
   const { buffer } = await generateHwpx({ settings: await analyzed(completePrompt), confirmed: true, title: "제출 안내" });
   const zip = await JSZip.loadAsync(buffer);
   const section = xmlParser.parse(await zip.file("Contents/section0.xml").async("string"));
   const text = [...elements(section)].find((element) => element.localName === "t" && element.children.some((part) => part["#text"] === "제출 안내"));
-  text.node[text.name] = [{ "#text": completePrompt }];
+  text.node[text.name] = [{ "#text": contents }];
   zip.file("Contents/section0.xml", builder.build(section));
   return zip.generateAsync({ type: "nodebuffer" });
 }
@@ -161,4 +161,21 @@ test("ranges with units on both ends and upper/lower limits remain unconfirmed f
     assert.equal(result.settings.lineSpacing.value, null, prompt);
     assert(result.warnings.some(({ type }) => type === "unparsed"));
   }
+});
+
+
+test('attached HWPX requirements preserve role styles, options and user changes through native XML',async context=>{
+ const app=await harness(context),text=completePrompt+' 제목 16pt, 소제목 12pt. 전체 왼쪽 정렬. 표지와 목차를 추가. 방법은 표로 작성. 항목 번호 없이.';
+ const analysis=await app.analyze('',[{name:'서식 안내.hwpx',bytes:await conditionDocument(text)}]);assert.equal(analysis.status,200);
+ const settings=analysis.result.analysis.settings;assert.equal(settings.typography.titleSizePt,16);assert.deepEqual(settings.documentOptions.tableItems,['방법']);
+ settings.typography.titleSizePt=18;settings.typography.headingSizePt=13;settings.alignment.heading='right';
+ const generated=await app.generate(settings,'편집한 문서');assert.equal(generated.status,200);assert.equal(generated.result.renderPlan.pages.length,3);
+ const zip=await JSZip.loadAsync(generated.bytes),section=xmlParser.parse(await zip.file('Contents/section0.xml').async('string')),header=xmlParser.parse(await zip.file('Contents/header.xml').async('string'));
+ const paragraphs=findElement(section,'sec').children.filter(n=>n['hp:p']);
+ for(const [index,block] of generated.result.renderPlan.paragraphs.entries()){
+  if(block.type!=='paragraph')continue;const p=findElement([paragraphs[index]],'p'),run=findElement(p.children,'run'),char=findElement(header,'charPr',run.attributes['@_charPrIDRef']);
+  assert.equal(Number(char.attributes['@_height'])/100,block.fontSizePt);
+  if(block.role==='title')assert.equal(block.fontSizePt,18);
+  if(block.role==='heading'){assert.equal(block.fontSizePt,13);assert.equal(block.alignment,'right');assert(!/^\d+\./.test(block.text));}
+ }
 });

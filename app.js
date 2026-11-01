@@ -67,13 +67,14 @@ const makeControl = (parent,path,label,options) => {
   const control=document.createElement(options?'select':'input');
   control.id='setting-'+path.replace(/\./g,'-');
   if(options){for(const [value,text] of Object.entries({'':'미지정',...options})){const option=document.createElement('option');option.value=value;option.textContent=text;control.append(option);}}
-  else {control.type='number';control.min=path==='columns.count'||path.startsWith('limits.')||path.endsWith('maxLines')||path.endsWith('fontSizePt')?'1':'0';control.max=path==='columns.count'?'8':path.startsWith('limits.')||path.endsWith('maxLines')?'1000':path.endsWith('fontSizePt')?'100':'150';control.step=path==='columns.count'||path.startsWith('limits.')||path.endsWith('maxLines')?'1':'0.01';control.placeholder='미지정';}
+  else {control.type='number';control.min=path==='columns.count'||path.startsWith('limits.')||path.endsWith('maxLines')||/(?:fontSizePt|titleSizePt|headingSizePt)$/.test(path)?'1':'0';control.max=path==='columns.count'?'8':path.startsWith('limits.')||path.endsWith('maxLines')?'1000':/(?:fontSizePt|titleSizePt|headingSizePt)$/.test(path)?'100':'150';control.step=path==='columns.count'||path.startsWith('limits.')||path.endsWith('maxLines')?'1':'0.01';control.placeholder='미지정';}
   wrapper.append(control);parent.append(wrapper);return control;
 };
 for(const [path,label,options] of [
+  ['typography.titleSizePt','제목 크기 (pt)'],['typography.headingSizePt','항목 제목 크기 (pt)'],
   ['headerFooterMm.header','머리글 위치 (mm)'],['headerFooterMm.footer','바닥글 위치 (mm)'],
   ['columns.count','단 수'],['columns.gapMm','단 간격 (mm)'],['columns.scope','다단 적용 범위',{document:'제목부터',body:'본문부터 (초록 뒤)'}],
-  ['columns.startItem','다단 시작 항목',{}],['alignment.title','제목 정렬',ALIGNMENTS],['alignment.body','본문 정렬',ALIGNMENTS],
+  ['columns.startItem','다단 시작 항목',{}],['alignment.title','제목 정렬',ALIGNMENTS],['alignment.heading','항목 제목 정렬',ALIGNMENTS],['alignment.body','본문 정렬',ALIGNMENTS],
   ['limits.maxPages','최대 쪽수 (전체)'],['limits.titleMaxLines','제목 최대 줄 수'],
 ])controls[path]=makeControl(advancedGrid,path,label,options);
 const sectionDetails=document.createElement('details');sectionDetails.className='section-options';const sectionSummary=document.createElement('summary');sectionSummary.textContent='항목별 서식';sectionDetails.append(sectionSummary);
@@ -82,6 +83,7 @@ const limitNote=document.createElement('p');limitNote.className='config-note';li
 const advancedDetails=document.createElement('details');advancedDetails.id='advanced-options';advancedDetails.className='settings-disclosure';const advancedSummary=document.createElement('summary');advancedSummary.textContent='배치·정렬·분량';advancedDetails.append(advancedSummary,advanced);
 settingsForm.insertBefore(advancedDetails,document.querySelector('#setting-items').closest('fieldset').nextSibling);
 const extras=document.querySelector('#setting-cover').closest('fieldset'),extraDetails=document.createElement('details');extraDetails.className='settings-disclosure';const extraSummary=document.createElement('summary');extraSummary.textContent='표지·목차·작성 표';extras.before(extraDetails);extraDetails.append(extraSummary,extras);
+const numberedLabel=document.createElement('label'),numberedControl=document.createElement('input');numberedControl.type='checkbox';numberedControl.id='setting-numbered';numberedControl.checked=true;numberedLabel.append(numberedControl,document.createTextNode(' 항목 번호 표시'));extras.append(numberedLabel);
 function renderSectionControls() {
   sectionControls.replaceChildren();
   const start=controls['columns.startItem'],selected=settings.columns?.startItem ?? '';
@@ -158,7 +160,8 @@ function invalidateFinalCheck() {
   finalSequence+=1;finalController?.abort();finalController=null;checkingFinal=false;finalResult.replaceChildren();finalButton.disabled=!confirmed||stale;
 }
 function focusSetting(path) {
-  const target=controls[path] || (path==='lineSpacing'?spacingValue:[...sectionControls.querySelectorAll('[data-setting-path]')].find(control=>control.dataset.settingPath===path));
+  const optionTargets={'documentOptions.coverPage':'setting-cover','documentOptions.contentsPage':'setting-contents','documentOptions.tableItems':'setting-tables','documentOptions.numberedItems':'setting-numbered'};
+  const target=controls[path] || (path==='documentTitle'?documentTitle:document.getElementById(optionTargets[path]||'')) || (path==='lineSpacing'?spacingValue:[...sectionControls.querySelectorAll('[data-setting-path]')].find(control=>control.dataset.settingPath===path));
   if(target){for(let parent=target.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;target.focus();target.scrollIntoView({behavior:'smooth',block:'center'});}
   else {advancedDetails.open=true;advancedDetails.scrollIntoView({behavior:'smooth',block:'center'});}
 }
@@ -351,6 +354,8 @@ function appendResultBlock(title, details, content) {
 
 function fillSettingsControls() {
   renderSectionControls();
+  if(settings.documentTitle!=null)documentTitle.value=settings.documentTitle;
+  numberedControl.checked=settings.documentOptions?.numberedItems!==false;
   for (const [path, control] of Object.entries(controls)) {
     const value = getSetting(settings, path);
     control.value = path === "requiredItems" ? value.join("\n") : value ?? "";
@@ -360,7 +365,7 @@ function fillSettingsControls() {
   document.querySelector('#setting-cover').checked=settings.documentOptions?.coverPage===true;
   document.querySelector('#setting-contents').checked=settings.documentOptions?.contentsPage===true;
   document.querySelector('#setting-tables').value=settings.documentOptions?.tableItems?.join('\n') || '';
-  const advancedFields=['headerFooterMm','columns','alignment','limits'];
+  const advancedFields=['headerFooterMm','columns','alignment','limits','typography'];
   advancedDetails.open=advancedFields.some(group=>Object.values(settings[group]||{}).some(value=>value!=null))||Boolean(settings.sectionStyles?.length);
   sectionDetails.open=Boolean(settings.sectionStyles?.some(s=>s.alignment||s.fontSizePt||s.maxLines));
   extraDetails.open=Boolean(settings.documentOptions?.coverPage||settings.documentOptions?.contentsPage||settings.documentOptions?.tableItems?.length);
@@ -376,7 +381,7 @@ function readSettingsControls() {
     setSetting(settings, path, value);
   }
   settings.lineSpacing = { value: spacingValue.validity.badInput ? NaN : spacingValue.value === "" ? null : Number(spacingValue.value), unit: spacingUnit.value || null };
-  settings.documentOptions={coverPage:document.querySelector('#setting-cover').checked,contentsPage:document.querySelector('#setting-contents').checked,tableItems:[...new Set(document.querySelector('#setting-tables').value.split('\n').map(value=>value.trim()).filter(Boolean))]};
+  settings.documentOptions={coverPage:document.querySelector('#setting-cover').checked,contentsPage:document.querySelector('#setting-contents').checked,tableItems:[...new Set(document.querySelector('#setting-tables').value.split('\n').map(value=>value.trim()).filter(Boolean))],numberedItems:numberedControl.checked};
 }
 
 function pendingWarnings() {
@@ -489,7 +494,7 @@ for (const control of [spacingValue, spacingUnit]) {
     refreshSettings();
   });
 }
-for(const id of ['setting-cover','setting-contents','setting-tables'])document.getElementById(id).addEventListener('input',()=>{if(!settings)return;readSettingsControls();confirmed=false;refreshSettings();});
+for(const id of ['setting-cover','setting-contents','setting-tables','setting-numbered'])document.getElementById(id).addEventListener('input',()=>{if(!settings)return;readSettingsControls();confirmed=false;refreshSettings();});
 
 settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -505,7 +510,7 @@ settingsForm.addEventListener("submit", (event) => {
   refreshSettings();
 });
 
-documentTitle.addEventListener("input", () => { clearHwpx(); refreshPreview(); invalidateFinalCheck(); });
+documentTitle.addEventListener("input", () => { if(settings){settings.documentTitle=documentTitle.value.trim()||null;reviewedFields.add("documentTitle");settingsJson.textContent=JSON.stringify(settings,null,2);} clearHwpx(); refreshPreview(); invalidateFinalCheck(); });
 hwpxButton.addEventListener("click", async () => {
   if (!confirmed || stale || generatingHwpx) return;
   clearHwpx();
@@ -562,7 +567,7 @@ initializeLibrary({
     characterCount.textContent = `${requirements.value.length} / 500`;
     selectedFiles = [];fileInput.value = '';renderFiles();resultContent.replaceChildren();
     analysis = {warnings:[],engine:'saved'};
-    settings = structuredClone(item.settings);documentTitle.value = item.title;
+    settings = structuredClone(item.settings);settings.documentTitle=item.title;documentTitle.value = item.title;
     reviewedFields = new Set();reviewedWarnings = new Set();confirmed=false;stale=false;
     clearHwpx();fillSettingsControls();refreshSettings();inputResult.hidden=false;
     collapseInput(true);

@@ -78,7 +78,7 @@ export function createLibraryHandler({ env, fetchImpl = fetch }) {
       if (!generatedResponse.ok) throw new Problem(generated.error || '문서 설정이 올바르지 않습니다.');
       const applied=generated.appliedSettings;
       const cleanSettings={schemaVersion:1,paper:applied.paper,marginsMm:applied.marginsMm,fontFamily:applied.fontFamily,fontSizePt:applied.fontSizePt,lineSpacing:applied.lineSpacing,requiredItems:applied.requiredItems,documentOptions:applied.documentOptions || {coverPage:false,contentsPage:false,tableItems:[]}};
-      for(const key of ['headerFooterMm','columns','alignment','limits','sectionStyles'])if(applied[key]!=null)cleanSettings[key]=applied[key];
+      for(const key of ['headerFooterMm','columns','alignment','limits','sectionStyles','typography','documentTitle'])if(applied[key]!=null)cleanSettings[key]=applied[key];
       if (typeof generated.fileBase64 !== 'string' || generated.fileBase64.length > 2666668) throw new Problem('생성 파일이 너무 큽니다.',413);
       const bytes = Uint8Array.from(atob(generated.fileBase64), c=>c.charCodeAt(0));
       const itemId = id || crypto.randomUUID(), managementToken = id ? null : token();

@@ -4,7 +4,7 @@ export const PAPER_SIZES = {
   B4: [250, 353], B5: [176, 250], LETTER: [215.9, 279.4], LEGAL: [215.9, 355.6],
 };
 
-export const DOCUMENT_LAYOUT_VERSION = 2;
+export const DOCUMENT_LAYOUT_VERSION = 3;
 const hwpMm = value => Math.round(value * 7200 / 25.4) / 100;
 export function documentLineHeight(size, spacing) {
   return Math.round((spacing?.unit === 'pt' ? spacing.value : size * (spacing?.unit === 'multiple' ? spacing.value : (spacing?.value ?? 160) / 100)) * 100) / 100;
@@ -12,7 +12,7 @@ export function documentLineHeight(size, spacing) {
 
 // Both the HWPX writer and browser use these paragraphs and explicit breaks.
 // The blank form has no user-authored body text to paginate separately.
-export function buildDocumentPlan(settings, title='문서 양식') {
+export function buildDocumentPlan(settings, title=null) {
   const dimensions=PAPER_SIZES[settings.paper?.size] ?? PAPER_SIZES.A4;
   const [widthMm,heightMm]=settings.paper?.orientation==='landscape'?[dimensions[1],dimensions[0]]:dimensions;
   const widthPt=hwpMm(widthMm),heightPt=hwpMm(heightMm);
@@ -50,19 +50,66 @@ export function buildDocumentPlan(settings, title='문서 양식') {
   }
   function paragraph(text,role='body',item=null,keep=false){
     const rule=settings.sectionStyles?.find(s=>s.item===item);
-    const fontSizePt=role==='title'?20:rule?.fontSizePt ?? (role==='heading'?14:bodySize);
+    const fontSizePt=role==='title'?(settings.typography?.titleSizePt ?? 20):rule?.fontSizePt ?? (role==='heading'?(settings.typography?.headingSizePt ?? 14):bodySize);
     const height=documentLineHeight(fontSizePt,spacing);
-    const alignment=role==='title'?(settings.alignment?.title ?? 'center'):(rule?.alignment ?? settings.alignment?.body ?? 'justify');
+    const alignment=role==='title'?(settings.alignment?.title ?? 'center'):(rule?.alignment ?? (role==='heading'?settings.alignment?.heading:null) ?? settings.alignment?.body ?? 'justify');
     return lines(text,fontSizePt,columnWidth()).map((line,index,array)=>({type:'paragraph',role,item,text:line,fontSizePt,bold:role==='title'||role==='heading',alignment,height,keepWithNext:keep||index<array.length-1}));
   }
   function group(blocks){advance(blocks.reduce((sum,b)=>sum+b.height,0));for(const block of blocks)push(block);}
-  const safeTitle=title.trim()||'문서 양식';
+  // A blank form must expose writing areas in every requested column, even
+  // before the user types enough text to fill the left column naturally.
+  // Keep each heading with its writing area and write the same explicit column
+  // breaks into HWPX; balancing only the browser's CSS would diverge again.
+  function balancedColumns(groups){
+    let offset=0;
+    const heightOf=blocks=>blocks.reduce((sum,b)=>sum+b.height,0);
+    while(offset<groups.length){
+      const capacity=bottom-areaTop;
+      let end=offset,used=0,needed=1;
+      for(;end<groups.length;end++){
+        const height=heightOf(groups[end]);
+        if(height>capacity+0.01)break;
+        if(used+height>capacity+0.01){needed++;used=0;}
+        if(needed>columnCount)break;
+        used+=height;
+      }
+      if(end===offset){
+        if(areaTop>bodyTop+0.01){newPage(page.kind,columnCount);continue;}
+        warnings.push('글자 크기·줄 간격 또는 표 높이가 한 쪽의 작성 영역보다 큽니다.');
+        for(const block of groups[offset++])push(block);
+        continue;
+      }
+      const heights=groups.slice(offset,end).map(heightOf),columns=Math.min(columnCount,heights.length);
+      let low=Math.max(...heights),high=capacity;
+      // Find the shortest column height that can hold these intact item groups.
+      for(let attempt=0;attempt<40;attempt++){
+        const target=(low+high)/2;let columnsNeeded=1,height=0;
+        for(const value of heights){if(height+value>target){columnsNeeded++;height=0;}height+=value;}
+        if(columnsNeeded<=columns)high=target;else low=target;
+      }
+      used=0;
+      for(let index=offset;index<end;index++){
+        const height=heights[index-offset],remaining=end-index,emptyColumns=columns-column-1;
+        if(used>0 && column+1<columns && (used+height>high+0.01 || remaining===emptyColumns)){
+          column++;y=areaTop;pendingColumn=true;used=0;
+        }
+        for(const block of groups[index])push(block);
+        used+=height;
+      }
+      offset=end;
+      if(offset<groups.length)newPage(page.kind,columnCount);
+    }
+  }
+  const safeTitle=(title || settings.documentTitle || '').trim()||'문서 양식';
+  const label=(item,index)=>options.numberedItems===false?item:`${index+1}. ${item}`;
   if(options.coverPage){newPage('cover');group(paragraph(safeTitle,'title'));for(const text of ['작성자:','소속:','작성일:'])group(paragraph(text));}
-  if(options.contentsPage){newPage('contents');group(paragraph('목차','title'));for(const [index,item] of items.entries())group(paragraph(`${index+1}. ${item}`));}
-  newPage('body',count>1&&!startItem?count:1);group(paragraph(safeTitle,'title'));
+  if(options.contentsPage){newPage('contents');group(paragraph('목차','title'));for(const [index,item] of items.entries())group(paragraph(label(item,index)));}
+  newPage('body',count>1&&!startItem?count:1);
+  const columnGroups=[],mainTitle=paragraph(safeTitle,'title');
+  if(columnCount>1)columnGroups.push(mainTitle);else group(mainTitle);
   for(const [index,item] of items.entries()){
     if(item===startItem&&count>1)useColumns(count);
-    const blocks=paragraph(`${index+1}. ${item}`,'heading',item,true);
+    const blocks=paragraph(label(item,index),'heading',item,true);
     if(options.tableItems?.includes(item)){
       const rule=settings.sectionStyles?.find(s=>s.item===item),cellSize=rule?.fontSizePt ?? bodySize;
       const labelWidths=[Math.round(columnWidth()*100/3)/100-6,columnWidth()-Math.round(columnWidth()*100/3)/100-6];
@@ -71,7 +118,14 @@ export function buildDocumentPlan(settings, title='문서 양식') {
       const rowHeight=Math.max(28,Math.round(cellSize*200+1000)/100,documentLineHeight(cellSize,spacing)*Math.max(...labels.map(parts=>parts.length))+4);
       blocks.push({type:'table',role:'body',item,fontSizePt:cellSize,bold:false,alignment:rule?.alignment ?? settings.alignment?.body ?? 'justify',height:rowHeight*3,rowHeight,cellLineHeight:documentLineHeight(cellSize,spacing),rows:[labels.map(parts=>parts.join('\n')),['',''],['','']],leftFraction:1/3,padding:{left:3,right:3,top:2,bottom:2},keepWithNext:false});
     }else blocks.push(...paragraph('','body',item,true),...paragraph('','body',item,false));
-    group(blocks);
+    if(columnCount>1)columnGroups.push(blocks);else group(blocks);
+  }
+  if(columnGroups.length){
+    if(columnGroups[0][0].role==='title' && columnGroups.length>1){
+      columnGroups[0].at(-1).keepWithNext=true;
+      columnGroups.splice(0,2,[...columnGroups[0],...columnGroups[1]]);
+    }
+    balancedColumns(columnGroups);
   }
   return {version:DOCUMENT_LAYOUT_VERSION,title:safeTitle,widthMm,heightMm,widthPt,heightPt,margins,bodyTop,bodyBottom:bottom,bodySize,fontFamily:settings.fontFamily||'함초롬바탕',lineSpacing:spacing,gapPt:gap,pages,paragraphs,warnings:[...new Set(warnings)]};
 }
@@ -80,10 +134,12 @@ export const FIELD_LABELS = {
   "paper.size": "용지 크기", "paper.orientation": "용지 방향",
   "marginsMm.top": "위쪽 여백", "marginsMm.bottom": "아래쪽 여백",
   "marginsMm.left": "왼쪽 여백", "marginsMm.right": "오른쪽 여백",
+  documentTitle:"문서 제목", "typography.titleSizePt":"제목 글자 크기", "typography.headingSizePt":"항목 제목 글자 크기",
+  "documentOptions.coverPage":"표지", "documentOptions.contentsPage":"목차 페이지", "documentOptions.tableItems":"작성 표 항목", "documentOptions.numberedItems":"항목 번호 표시",
   fontFamily: "글꼴", fontSizePt: "본문 글자 크기", lineSpacing: "줄 간격", requiredItems: "필수 항목",
   "headerFooterMm.header": "머리글 위치", "headerFooterMm.footer": "바닥글 위치",
   "columns.count": "단 수", "columns.gapMm": "단 사이 간격", "columns.scope": "다단 적용 범위",
-  "columns.startItem": "다단 시작 항목", "alignment.title": "제목 정렬", "alignment.body": "본문 정렬",
+  "columns.startItem": "다단 시작 항목", "alignment.title": "제목 정렬", "alignment.heading":"항목 제목 정렬", "alignment.body": "본문 정렬",
   "limits.maxPages": "최대 쪽수", "limits.titleMaxLines": "제목 최대 줄 수", sectionStyles: "항목별 서식",
 };
 
@@ -95,15 +151,16 @@ export function sectionPath(path) {
   try { const item = decodeURIComponent(match[1]); return item && item.length <= 100 ? { item, property: match[2] } : null; } catch { return null; }
 }
 export const fieldLabel = path => { const section = sectionPath(path); return section ? `${section.item} ${{alignment:'정렬',maxLines:'최대 줄 수',fontSizePt:'글자 크기'}[section.property]}` : FIELD_LABELS[path]; };
-export const isNumericField = path => /^(?:marginsMm\.|headerFooterMm\.|limits\.)/.test(path) || ['fontSizePt','columns.count','columns.gapMm'].includes(path) || /\.(?:maxLines|fontSizePt)$/.test(path);
+export const isNumericField = path => /^(?:marginsMm\.|headerFooterMm\.|limits\.)/.test(path) || ['fontSizePt','columns.count','columns.gapMm'].includes(path) || path.startsWith('typography.') || /\.(?:maxLines|fontSizePt)$/.test(path);
 
 // Canonical optional groups are shared by generation and local backup/import.
 export function optionalSettings(raw) {
   const result = {};
-  for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body'],limits:['maxPages','titleMaxLines']})) {
+  for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body','heading'],typography:['titleSizePt','headingSizePt'],limits:['maxPages','titleMaxLines']})) {
     if (raw[group] != null) result[group] = Object.fromEntries(keys.map(key => [key, raw[group][key] ?? null]));
   }
   if (raw.sectionStyles != null) result.sectionStyles = raw.sectionStyles.map(style => ({item:style.item,alignment:style.alignment ?? null,maxLines:style.maxLines ?? null,fontSizePt:style.fontSizePt ?? null}));
+  if(raw.documentTitle!=null)result.documentTitle=raw.documentTitle;
   return result;
 }
 
@@ -135,14 +192,15 @@ export function setSetting(settings, path, value) {
   if (!Object.hasOwn(FIELD_LABELS, path)) throw new Error("지원하지 않는 설정 항목입니다.");
   const keys = path.split(".");
   if (keys.length === 1) settings[path] = value;
-  else (settings[keys[0]] ??= {})[keys[1]] = value;
+  else {if(keys[0]==='documentOptions')settings.documentOptions ??= {coverPage:false,contentsPage:false,tableItems:[]};(settings[keys[0]] ??= {})[keys[1]]=value;}
 }
 
 export function formatSetting(path, value) {
   if (value === null || value === undefined) return "미지정";
+  if (typeof value === "boolean")return value?"사용":"사용 안 함";
   if (path === "paper.orientation") return value === "portrait" ? "세로" : "가로";
   if (/^(marginsMm|headerFooterMm)\./.test(path) || path === 'columns.gapMm') return `${value} mm`;
-  if (path === "fontSizePt" || path.endsWith('.fontSizePt')) return `${value} pt`;
+  if (path === "fontSizePt" || path.endsWith('.fontSizePt') || path.startsWith("typography.")) return `${value} pt`;
   if (path.startsWith('alignment.') || path.endsWith('.alignment')) return ALIGNMENTS[value] ?? String(value);
   if (path === 'columns.scope') return value === 'body' ? '본문부터' : '제목부터';
   if (path === "lineSpacing") return `${value.value}${{ percent: "%", pt: " pt", multiple: "배" }[value.unit] ?? " (단위 미지정)"}`;
@@ -179,6 +237,7 @@ export function validateSettings(settings) {
   }
   if (!settings.fontFamily?.trim()) warn("missing", "fontFamily", "글꼴을 지정해 주세요.");
   else if (settings.fontFamily.length > 80) warn("invalid", "fontFamily", "글꼴 이름은 80자 이내로 입력해 주세요.");
+  if(settings.documentTitle!=null && (typeof settings.documentTitle!=='string' || !settings.documentTitle.trim() || settings.documentTitle.length>80 || /[\x00-\x1f]/.test(settings.documentTitle)))warn('invalid','documentTitle','문서 제목은 한 줄, 80자 이내로 입력해 주세요.');
   const fontSize = settings.fontSizePt;
   if (fontSize == null) warn("missing", "fontSizePt", "본문 글자 크기를 지정해 주세요. (pt)");
   else if (typeof fontSize !== "number" || !Number.isFinite(fontSize) || fontSize < 1 || fontSize > 100) {
@@ -197,8 +256,8 @@ export function validateSettings(settings) {
     warn("invalid", "requiredItems", "필수 항목은 최대 50개, 항목당 100자 이내로 입력해 주세요.");
   }
   const options=settings.documentOptions;
-  if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !settings.requiredItems?.includes(item)))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');
-  for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body'],limits:['maxPages','titleMaxLines']})) {
+  if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !settings.requiredItems?.includes(item)) || (options.numberedItems!=null&&typeof options.numberedItems!=='boolean'))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');
+  for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body','heading'],typography:['titleSizePt','headingSizePt'],limits:['maxPages','titleMaxLines']})) {
     if (settings[group] != null && (typeof settings[group] !== 'object' || Array.isArray(settings[group]))) { warn('invalid',group,`${group}: 설정 형식이 잘못되었습니다.`); continue; }
     for (const key of keys) {
       const path = `${group}.${key}`, value = settings[group]?.[key];
@@ -209,6 +268,7 @@ export function validateSettings(settings) {
       else if (path === 'columns.scope') valid = ['body','document'].includes(value);
       else if (path === 'columns.startItem') valid = typeof value === 'string' && settings.requiredItems?.includes(value);
       else if (group === 'alignment') valid = Object.hasOwn(ALIGNMENTS,value);
+      else if (group === 'typography') valid = typeof value==='number' && Number.isFinite(value) && value>=1 && value<=100;
       else if (group === 'limits') valid = Number.isInteger(value) && value > 0 && value <= 1000;
       if (!valid) warn('invalid',path,`${FIELD_LABELS[path]}의 값과 지원 범위를 확인해 주세요.`);
     }

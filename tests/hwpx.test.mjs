@@ -205,7 +205,7 @@ test('preview plan and generated paragraphs share pages, columns, visible text a
       assert(block.y>=plan.bodyTop);assert(block.y+block.height<=plan.bodyBottom+0.01);
     }
     if(variant==='many'){assert(plan.pages.length>1);assert(plan.paragraphs.some(b=>b.columnBreak));}
-    if(variant==='columns'){assert.equal(plan.bodyTop,mmToHwpUnit(25)/100+mmToHwpUnit(20)/100);assert.equal(plan.pages[0].blocks.at(-1).column,0,'Short columns must not balance into the next column');}
+    if(variant==='columns'){assert.equal(plan.bodyTop,mmToHwpUnit(25)/100+mmToHwpUnit(20)/100);assert.equal(plan.pages[0].blocks.at(-1).column,1,'A short blank form must expose the requested right-hand column');}
     if(variant==='long')assert(plan.paragraphs.filter(b=>b.role==='heading').length>s.requiredItems.length);
   }
 });
@@ -223,4 +223,32 @@ test('narrow table headers wrap in both the page plan and native cells, and unus
  const {section}=await readDocument(result.buffer),row=findElement(findElement(section,'tbl').children,'tr'),cell=findElement(row.children,'tc');
  assert.deepEqual([...elements(cell.children)].filter(e=>e.localName==='t').map(e=>e.children.map(n=>n['#text']??'').join('')),['구','분']);
  payload.settings.sectionStyles[0].fontSizePt=80;await assert.rejects(()=>generateHwpx(payload),/너비|단 너비/);
+});
+
+
+test('publication requirements produce side-by-side body items on one page with matching HWPX column breaks',async()=>{
+ const payload=input();Object.assign(payload.settings,{marginsMm:{top:30,bottom:25,left:15,right:15},fontFamily:'바탕체',fontSizePt:10,lineSpacing:{value:1,unit:'multiple'},requiredItems:['Abstract','서론','본론','결론','참고문헌'],columns:{count:2,gapMm:7.04,scope:'body'},alignment:{title:'left',body:'justify'},sectionStyles:[{item:'Abstract',alignment:'left',maxLines:15}],headerFooterMm:{header:20,footer:10}});
+ const result=await generateHwpx(payload),plan=result.renderPlan;
+ assert.equal(plan.pages.length,1);const headings=plan.paragraphs.filter(b=>b.role==='heading');
+ assert.equal(headings[0].columnCount,1,'Abstract stays above the body columns');
+ assert.deepEqual(headings.slice(1).map(b=>[b.item,b.column]),[['서론',0],['본론',0],['결론',1],['참고문헌',1]]);
+ assert.equal(headings[1].y,headings[3].y,'Both columns start at the same height');
+ assert(Math.abs(headings[3].x-headings[1].x-headings[1].width-mmToHwpUnit(7.04)/100)<0.001);
+ const {section}=await readDocument(result.buffer),paras=findElement(section,'sec').children.filter(n=>n['hp:p']);
+ const rightStart=plan.paragraphs.findIndex(b=>b.item==='결론');assert.equal(paras[rightStart][':@']['@_columnBreak'],'1');
+ assert.equal(paras[rightStart][':@']['@_pageBreak'],'0','The right-hand column belongs to the same page');
+ for(const item of payload.settings.requiredItems){const blocks=plan.paragraphs.filter(b=>b.item===item);assert.equal(new Set(blocks.map(b=>b.page+':'+b.column)).size,1,'Writing areas stay with their heading');}
+});
+
+test('balanced multi-column forms preserve order and stay inside the page for unequal tables and additional pages',async()=>{
+ for(const count of [2,3,4]){
+  const payload=input();Object.assign(payload.settings,{requiredItems:Array.from({length:23},(_,i)=>`항목 ${i+1}`),columns:{count,gapMm:4,scope:'document'},documentOptions:{coverPage:true,contentsPage:true,tableItems:['항목 2','항목 6','항목 12']}});
+  const result=await generateHwpx(payload),plan=result.renderPlan;assert.deepEqual(plan.warnings,[]);
+  assert.deepEqual(plan.paragraphs.filter(b=>b.role==='heading').map(b=>b.item),payload.settings.requiredItems);
+  for(const page of plan.pages.filter(p=>p.kind==='body')){
+   assert(new Set(page.blocks.map(b=>b.column)).size>1);
+   for(const b of page.blocks){assert(b.y>=plan.bodyTop);assert(b.y+b.height<=plan.bodyBottom+0.01);}
+  }
+  for(const name of payload.settings.documentOptions.tableItems){const blocks=plan.paragraphs.filter(b=>b.item===name);assert.equal(new Set(blocks.map(b=>b.page+':'+b.column)).size,1);}
+ }
 });

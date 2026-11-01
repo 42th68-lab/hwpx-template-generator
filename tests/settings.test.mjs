@@ -315,3 +315,10 @@ test('invalid JSON settings types and prototype-like AI fields do not crash vali
  const r=await analyzeInputs({prompt:'글꼴 프리텐다드',files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions})}]}}]})});
  assert.equal(r.engine,'gemini');assert.equal(r.settings.fontFamily,'프리텐다드');assert(r.warnings.some(w=>w.code==='INVALID_CONDITION'));
 });
+
+
+test('Gemini cannot override an explicitly ambiguous numeric range with a guessed value',async()=>{
+ const conditions=[{field:'fontSizePt',value:'12pt',sourceId:'prompt',quote:'본문 10–12pt',action:'include'},{field:'marginsMm.top',value:'20mm',sourceId:'prompt',quote:'위 여백 20mm',action:'include'}];
+ const r=await analyzeInputs({prompt:'본문 10–12pt, 위 여백 20mm',files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions})}]}}]})});
+ assert.equal(r.engine,'gemini');assert.equal(r.settings.fontSizePt,null);assert.equal(r.settings.marginsMm.top,20);assert(r.warnings.some(w=>w.field==='fontSizePt'&&w.type==='unparsed'));
+});

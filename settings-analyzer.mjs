@@ -403,7 +403,7 @@ function canonicalAiField(field,knownItems=[]) {
   }catch{return field;}
 }
 
-async function extractGemini(sources, env, fetchImpl, deterministic = []) {
+async function extractGemini(sources, env, fetchImpl, deterministic = [], ruleWarnings = []) {
   const model = env.GEMINI_MODEL?.trim() || "gemini-3.5-flash-lite";
   if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error("MODEL_CONFIG");
   const requestBody = {
@@ -467,6 +467,7 @@ value는 문자열이다. 여백은 mm 또는 cm가 붙은 값, 글자 크기는
     if(source && tableInfo(source).managed.has(item.field))continue;
     const quote = typeof item.quote === "string" ? normalize(item.quote) : "";
     const value = parseValue(item.field, item.value);
+    if(ruleWarnings.some(w=>w.sourceId===source?.id&&w.field===item.field&&w.type==='unparsed'&&/범위|상한|하한/.test(w.message)&&(w.quote?.includes(quote)||quote.includes(w.quote))))continue;
     const unitSupported=(item.field==='fontSizePt'||item.field.startsWith('typography.')||item.field.endsWith('.fontSizePt'))?/pt|포인트|points?/i.test(quote):item.field==='lineSpacing'?/%|퍼센트|pt|포인트|배|(?:한|두|세|반)\s*줄|single[- ]?spac|double[- ]?spac|times/i.test(quote):true;
     if (!source || !quote || !normalize(source.text).includes(quote) || !unitSupported || value == null || !validCandidate(item.field, value) || !["include", "exclude"].includes(item.action) || (item.action === "exclude" && !["requiredItems","documentOptions.tableItems"].includes(item.field))) {
       const field=fieldLabel(item.field)?item.field:null;
@@ -502,7 +503,7 @@ export async function analyzeInputs(inputs, { env = process.env, fetchImpl = fet
   let engine = "rules";
   if (config.configured) {
     try {
-      const ai = await extractGemini(sources, env, fetchImpl,rules.conditions);
+      const ai = await extractGemini(sources, env, fetchImpl,rules.conditions,rules.warnings);
       conditions = [...rules.conditions, ...ai.conditions];
       warnings.push(...ai.warnings);
       engine = "gemini";

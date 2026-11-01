@@ -145,4 +145,3 @@ console.log(`본문 구역: ${sections.length > 0 ? `${sections.length}개` : "�
 if (entries[0]?.name !== "mimetype" || mimetypeEntry?.method !== 0 || missing.length > 0 || sections.length === 0) {
   process.exitCode = 2;
 }
-

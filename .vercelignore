@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+etc/
+docs/
+tmp/
+탐구일지/
+.npm-cache/
+node_modules/
+dist/
+*.docx
+*.pdf
+*.pptx
+*.hwp
+*.lnk

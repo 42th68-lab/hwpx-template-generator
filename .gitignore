@@ -1,5 +1,6 @@
 # Local dependencies and build output
 node_modules/
+.npm-cache/
 .vercel/
 dist/
 
@@ -11,14 +12,18 @@ dist/
 # Temporary files
 tmp/
 *.log
+*.lnk
 
 # Local working notes (the readable DOCX is the submitted 1st-session result)
 docs/
 
 # Original school materials and personal activity logs
 etc/
+output/
+탐구일지/
+*.docx
 *.hwpx
+!assets/hwpx/basic-report.hwpx
 *.hwp
 *.pdf
 *.pptx
-

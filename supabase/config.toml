@@ -1,0 +1,4 @@
+# The handler validates the publishable key and per-form management capability.
+[functions.guest-library]
+verify_jwt = false
+entrypoint = "./functions/guest-library/index.ts"

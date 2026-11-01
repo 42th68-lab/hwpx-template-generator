@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "fluid": true,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm ci",
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60,
+      "includeFiles": "{assets/hwpx/basic-report.hwpx,node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs}",
+      "excludeFiles": "{etc/**,docs/**,tmp/**,tests/**,탐구일지/**,**/*.docx,**/*.pptx}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:action(config|inputs|analyze|hwpx|library|check-document)", "destination": "/api/index?route=:action" }
+  ],
+  "headers": [
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/(.*)", "headers": [{ "key": "X-Content-Type-Options", "value": "nosniff" }, { "key": "Referrer-Policy", "value": "same-origin" }] },
+    { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+  ]
+}

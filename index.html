@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="자연어 요구사항과 참고 파일을 바탕으로 HWPX 문서 양식을 만드는 서비스의 입력 화면"
+    />
+    <title>한폼 | HWPX 양식 만들기</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="한폼 홈">
+        <span class="brand-mark" aria-hidden="true">ㅎ</span>
+        <span>한폼</span>
+      </a>
+      <nav class="library-toolbar header-nav" aria-label="양식 관리"><button id="new-template" class="secondary-button" type="button">새 양식</button><a href="#my-library" class="secondary-button">내 양식</a><a href="#public-library" class="secondary-button">공개 양식</a></nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <h1 id="page-title">문서 양식 만들기</h1>
+        <p class="hero-copy">제출 조건을 입력하거나 안내문을 첨부하세요.</p>
+      </section>
+      <nav class="workflow-steps" aria-label="양식 만들기 단계">
+        <a href="#conditions-input" data-step="1" aria-current="step"><span>1</span> 조건 입력</a>
+        <a href="#input-result" data-step="2"><span>2</span> 설정 확인</a>
+        <a href="#hwpx-title" data-step="3"><span>3</span> 양식 생성</a>
+      </nav>
+      <section class="workspace input-workspace" id="conditions-input" aria-label="양식 생성 조건 입력">
+        <div class="workspace-heading"><h2>조건 입력</h2><button id="toggle-input" type="button" class="text-button" hidden>입력 수정</button></div>
+        <p id="input-summary" class="input-summary" hidden></p>
+        <form id="template-form" novalidate>
+          <div class="field-group">
+            <div class="field-heading">
+              <label for="requirements">요구사항</label>
+              <span id="character-count">0 / 500</span>
+            </div>
+            <textarea
+              id="requirements"
+              name="requirements"
+              maxlength="500"
+              rows="5"
+              placeholder="예: A4 크기, 본문 10pt, 연구 목적·방법·결과·결론이 포함된 탐구 보고서 양식을 만들어 줘."
+            ></textarea>
+            <div class="examples" aria-label="입력 예시">
+              <span>빠른 예시</span>
+              <button type="button" class="example-chip" data-example="A4 세로, 모든 여백 20mm, 글꼴 맑은 고딕, 본문 10pt, 줄 간격 160%. 필수 항목: 연구 목적, 방법, 결과, 결론.">탐구 보고서</button>
+              <button type="button" class="example-chip" data-example="표지와 목차가 있는 대회 제출용 보고서 양식을 만들어 줘. 본문에는 활동 내용과 느낀 점 항목을 넣어 줘.">대회 보고서</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-heading">
+              <span class="label-text">참고 파일</span>
+              <span>PDF · HWPX / 최대 3개, 합계 3.5MB</span>
+            </div>
+            <label class="drop-zone" id="drop-zone" for="file-input">
+              <span class="upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img">
+                  <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V14" />
+                </svg>
+              </span>
+              <strong>안내문 첨부</strong>
+              <span>파일을 끌어 놓거나 클릭하세요.</span>
+              <input id="file-input" name="files" type="file" accept=".pdf,.hwpx" multiple />
+            </label>
+            <ul id="file-list" class="file-list" aria-live="polite"></ul>
+          </div>
+
+          <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+          <p id="analysis-config" class="config-note" role="status">분석 설정을 확인하고 있습니다.</p>
+          <div id="startup-error" class="warning-item" role="alert" hidden><p>화면을 불러오지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.</p><button type="button" class="secondary-button" onclick="location.reload()">새로고침</button></div>
+          <button class="generate-button" id="generate-button" type="submit" disabled>
+            <span>화면 준비 중…</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14m-5-5l5 5-5 5" />
+            </svg>
+          </button>
+        </form>
+      </section>
+
+      <section class="result-panel" id="input-result" aria-labelledby="result-title" hidden>
+        <div class="result-heading"><h2 id="result-title">문서 설정</h2><span id="analysis-engine" class="engine-badge"></span></div>
+        <p id="settings-state" class="settings-state" role="status" aria-live="polite"></p>
+        <div class="warning-panel" aria-labelledby="warnings-title">
+          <h3 id="warnings-title">확인이 필요한 조건</h3>
+          <ul id="settings-warnings" class="settings-warnings" aria-live="polite"></ul>
+        </div>
+        <form id="settings-form" novalidate>
+          <fieldset>
+            <legend>용지</legend>
+            <div class="settings-grid">
+              <label>용지 크기<select id="setting-paper"><option value="">미지정</option><option>A4</option><option>A3</option><option>A5</option><option>B4</option><option>B5</option><option value="LETTER">Letter</option><option value="LEGAL">Legal</option></select></label>
+              <label>용지 방향 (선택)<select id="setting-orientation"><option value="">미지정</option><option value="portrait">세로</option><option value="landscape">가로</option></select></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>여백 (mm)</legend>
+            <div class="settings-grid margin-grid">
+              <label>위쪽<input id="setting-top" type="number" min="0" max="150" step="0.1" placeholder="미지정" /></label>
+              <label>아래쪽<input id="setting-bottom" type="number" min="0" max="150" step="0.1" placeholder="미지정" /></label>
+              <label>왼쪽<input id="setting-left" type="number" min="0" max="150" step="0.1" placeholder="미지정" /></label>
+              <label>오른쪽<input id="setting-right" type="number" min="0" max="150" step="0.1" placeholder="미지정" /></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>본문 글꼴과 크기</legend>
+            <div class="settings-grid">
+              <label>글꼴<input id="setting-font" type="text" maxlength="80" list="font-options" placeholder="예: 맑은 고딕" /><datalist id="font-options"><option value="맑은 고딕"></option><option value="함초롬바탕"></option><option value="바탕"></option><option value="돋움"></option></datalist></label>
+              <label>글자 크기 (pt)<input id="setting-font-size" type="number" min="1" max="100" step="0.1" placeholder="미지정" /></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>줄 간격</legend>
+            <div class="settings-grid">
+              <label>값<input id="setting-spacing-value" type="number" min="0.1" max="500" step="0.1" placeholder="미지정" /></label>
+              <label>단위<select id="setting-spacing-unit"><option value="">미지정</option><option value="percent">%</option><option value="pt">pt (고정 간격)</option><option value="multiple">배</option></select></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>필수 항목</legend>
+            <label for="setting-items">문서 순서대로 한 줄에 하나씩 입력하세요.</label>
+            <textarea id="setting-items" rows="5" maxlength="5050" placeholder="연구 목적&#10;방법&#10;결과&#10;결론"></textarea>
+          </fieldset>
+          <fieldset><legend>추가 구성</legend>
+            <label><input id="setting-cover" type="checkbox" /> 제목·작성자·소속·작성일 칸이 있는 표지 추가</label>
+            <label><input id="setting-contents" type="checkbox" /> 필수 항목으로 목차 페이지 만들기</label>
+            <label for="setting-tables">표로 작성할 항목 (필수 항목 이름을 한 줄에 하나씩)</label>
+            <textarea id="setting-tables" rows="2" maxlength="5050" placeholder="예: 연구 방법"></textarea>
+            <p class="config-note">선택한 항목 아래에 3행·2열 작성용 표를 넣습니다. 목차는 항목 목록으로 생성하며 쪽번호 자동 필드는 포함하지 않습니다.</p>
+          </fieldset>
+          <button id="confirm-settings" class="generate-button" type="submit">설정 확정하기</button>
+        </form>
+        <details class="json-details">
+          <summary>설정 JSON 보기</summary>
+          <p>수정한 값이 바로 반영됩니다. 설정을 확정하면 JSON 파일로 내려받을 수 있습니다.</p>
+          <pre id="settings-json" class="result-text"></pre>
+          <button id="download-settings" class="secondary-button" type="button" disabled>확정한 JSON 내려받기</button>
+        </details>
+        <section class="hwpx-panel" aria-labelledby="hwpx-title">
+          <h3 id="hwpx-title">양식 미리보기</h3>
+          <label for="document-title">문서 제목</label>
+          <input id="document-title" type="text" maxlength="80" value="문서 양식" />
+          <section id="document-preview" class="document-preview" aria-labelledby="preview-title"></section>
+          <button id="create-hwpx" class="generate-button" type="button" disabled>HWPX 양식 만들기</button>
+          <button id="save-template" class="secondary-button" type="button" disabled>내 양식에 저장</button>
+          <p id="hwpx-status" class="settings-state" role="status" aria-live="polite">먼저 위에서 설정을 확정해 주세요.</p>
+          <details id="generation-notes" hidden><summary>생성 참고사항</summary><ul id="hwpx-warnings" class="settings-warnings"></ul></details>
+          <a id="download-hwpx" class="secondary-button download-link" hidden>HWPX 내려받기</a>
+          <p id="hwpx-expiry" class="config-note" hidden>제목이나 설정을 바꾸면 파일을 다시 생성하세요.</p>
+        </section>
+        <details class="source-details">
+          <summary>분석에 사용한 원문</summary>
+          <div id="result-content"></div>
+        </details>
+      </section>
+      <section id="my-library" class="workspace library-panel" aria-labelledby="my-library-title">
+        <h2 id="my-library-title">내 양식</h2>
+        <p>이 브라우저에 저장됩니다. 다른 기기로 옮길 때는 백업을 이용하세요.</p>
+        <label for="saved-search">내 양식 검색</label><input id="saved-search" type="search" maxlength="80" placeholder="양식 이름 또는 필수 항목" />
+        <div class="library-toolbar"><button id="backup-templates" class="secondary-button" type="button">양식 백업 내려받기</button><label class="secondary-button" for="import-templates">백업 가져오기</label><input id="import-templates" type="file" accept=".json,application/json" /></div>
+        <p class="config-note">백업에는 온라인 양식을 수정·삭제하는 관리 정보도 들어갑니다. 다른 사람에게는 ‘공유 링크’를 보내세요.</p>
+        <p id="library-status" role="status" aria-live="polite"></p><div id="saved-templates" class="template-grid"></div>
+      </section>
+      <details id="public-library" class="workspace library-panel">
+        <summary>공개 양식 찾기</summary>
+        <p>다른 사람이 공개한 양식을 검색하고 내 양식으로 복사해 수정할 수 있습니다.</p>
+        <form id="public-search-form"><label for="public-search">공개 양식 검색</label><input id="public-search" type="search" maxlength="80" placeholder="이름·작성자·필수 항목" /><button type="submit" class="secondary-button">검색</button></form>
+        <p id="public-status" role="status" aria-live="polite"></p><div id="public-templates" class="template-grid"></div>
+        <div class="library-toolbar"><button id="public-previous" class="secondary-button" type="button" disabled>이전</button><button id="public-next" class="secondary-button" type="button" disabled>다음</button></div>
+      </details>
+      <dialog id="share-dialog" aria-labelledby="share-title">
+        <form id="share-form"><h2 id="share-title">온라인 보관·공개 설정</h2><p id="share-document-name"></p>
+          <p>설정을 저장하면 이름·입력 조건·문서 설정과 생성 파일을 온라인에 보관합니다. 아래 공개 항목을 체크하지 않으면 내 관리 정보로만 접근할 수 있습니다.</p>
+          <label><input id="share-consent" type="checkbox" /> 이 양식의 제목·설정·HWPX를 누구나 검색하고 내려받을 수 있도록 공개합니다.</label>
+          <label><input id="share-anonymous" type="checkbox" checked /> 익명으로 공개</label>
+          <label for="share-author">공개할 이름 (40자 이내)</label><input id="share-author" type="text" maxlength="40" disabled />
+          <label><input id="share-requirements" type="checkbox" /> 직접 입력한 요구사항도 공개</label>
+          <p class="config-note">첨부한 원본 PDF/HWPX와 추출 본문은 공유하지 않습니다. 공개 취소·수정·삭제 권한은 이 브라우저 또는 내 백업 파일에 보관됩니다.</p>
+          <p class="config-note">내 양식에서 수정한 내용은 여기서 설정을 저장해야 온라인 보관본에 반영됩니다.</p>
+          <p id="share-status" role="status" aria-live="polite"></p>
+          <div class="library-toolbar"><button id="share-save" type="submit" class="generate-button">설정 저장</button><button id="share-cancel" type="button" class="secondary-button">닫기</button></div>
+        </form>
+      </dialog>
+    </main>
+
+
+    <script>
+      (() => {
+        const form = document.getElementById('template-form');
+        const notice = document.getElementById('startup-error');
+        const failed = () => { if (form.dataset.ready !== 'true') notice.hidden = false; };
+        window.addEventListener('error', failed, true);
+        window.addEventListener('unhandledrejection', failed);
+        const timer = setTimeout(failed, 12000);
+        document.addEventListener('hanform-ready', () => { clearTimeout(timer); notice.hidden = true; });
+        form.addEventListener('submit', event => { if (form.dataset.ready !== 'true') event.preventDefault(); });
+      })();
+    </script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

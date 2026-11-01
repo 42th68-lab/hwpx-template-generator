@@ -1,0 +1,21 @@
+{
+  "name": "hanform",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "prestart": "npm run build",
+    "build": "node scripts/build-web.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:real": "node scripts/verify-round4.mjs"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.11.2",
+    "jszip": "3.10.2",
+    "pdfjs-dist": "6.3.289"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

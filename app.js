@@ -1,6 +1,6 @@
-import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField } from "./settings-model.js";
+import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField, reconcileItemReferences } from "./settings-model.js";
 import { renderDocumentPreview } from "./document-preview.js";
-import { UPLOAD_LIMITS, checkUploadLimits, timedRequest } from "./upload-limits.js";
+import { UPLOAD_LIMITS, checkUploadLimits, timedRequest, generatedFileBytes } from "./upload-limits.js";
 import { initializeLibrary } from "./library-ui.js";
 
 const form = document.querySelector("#template-form");
@@ -454,6 +454,7 @@ function refreshSettings() {
     control.setAttribute("aria-invalid", String(validation.some((warning) => warning.field === path) || pending.some((warning) => warning.field === path && ["conflict","choice"].includes(warning.type))));
   }
   const blocking = pending.some((warning) => ["conflict", "choice", "unparsed", "unsupported"].includes(warning.type)) || validation.length > 0;
+  if(blocking)confirmed=false;
   const remaining=active.filter(w=>w.type!=='analysis'&&!w.acknowledged).length;
   confirmButton.textContent=stale?'재분석 필요':confirmed?'설정 확정 완료':blocking?`확인할 조건 ${remaining}개`:'설정 확정하기';
   confirmButton.classList.toggle('needs-review',blocking);
@@ -479,7 +480,7 @@ for (const [path, control] of Object.entries(controls)) {
   control.addEventListener("input", () => {
     if (!settings) return;
     readSettingsControls();
-    if(path==='requiredItems') {settings.sectionStyles=settings.sectionStyles?.filter(style=>settings.requiredItems.includes(style.item));if(settings.columns?.startItem&&!settings.requiredItems.includes(settings.columns.startItem))settings.columns.startItem=null;renderSectionControls();}
+    if(path==='requiredItems') {reconcileItemReferences(settings);document.querySelector('#setting-tables').value=settings.documentOptions?.tableItems?.join('\n')||'';renderSectionControls();}
     reviewedFields.add(path);
     confirmed = false;
     refreshSettings();
@@ -494,7 +495,7 @@ for (const control of [spacingValue, spacingUnit]) {
     refreshSettings();
   });
 }
-for(const id of ['setting-cover','setting-contents','setting-tables','setting-numbered'])document.getElementById(id).addEventListener('input',()=>{if(!settings)return;readSettingsControls();confirmed=false;refreshSettings();});
+for(const [id,field] of Object.entries({'setting-cover':'coverPage','setting-contents':'contentsPage','setting-tables':'tableItems','setting-numbered':'numberedItems'}))document.getElementById(id).addEventListener('input',()=>{if(!settings)return;readSettingsControls();reviewedFields.add('documentOptions.'+field);confirmed=false;refreshSettings();});
 
 settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -510,7 +511,7 @@ settingsForm.addEventListener("submit", (event) => {
   refreshSettings();
 });
 
-documentTitle.addEventListener("input", () => { if(settings){settings.documentTitle=documentTitle.value.trim()||null;reviewedFields.add("documentTitle");settingsJson.textContent=JSON.stringify(settings,null,2);} clearHwpx(); refreshPreview(); invalidateFinalCheck(); });
+documentTitle.addEventListener("input", () => { if(settings){settings.documentTitle=documentTitle.value.trim()||null;reviewedFields.add("documentTitle");settingsJson.textContent=JSON.stringify(settings,null,2);} clearHwpx(); refreshSettings(); });
 hwpxButton.addEventListener("click", async () => {
   if (!confirmed || stale || generatingHwpx) return;
   clearHwpx();
@@ -534,8 +535,7 @@ hwpxButton.addEventListener("click", async () => {
       hwpxWarnings.append(item);
     }
     document.querySelector('#generation-notes').hidden=result.warnings.length===0;
-    if (typeof result.fileBase64 !== "string" || result.fileBase64.length > Math.ceil(UPLOAD_LIMITS.maxGeneratedFileBytes / 3) * 4) throw new Error("파일 데이터가 올바르지 않습니다. 다시 생성해 주세요.");
-    const bytes = Uint8Array.from(atob(result.fileBase64), (character) => character.charCodeAt(0));
+    const bytes = generatedFileBytes(result);
     generatedBlob = new Blob([bytes], { type: "application/hwp+zip" });
     generatedName = result.fileName;
     generatedPlan = result.renderPlan;

@@ -1,5 +1,10 @@
+import {requestJson,generatedFileBytes} from './upload-limits.js';
 import {DOCUMENT_LAYOUT_VERSION} from './settings-model.js';
 import {allForms,getForm,saveForm,deleteForm,setCloud,backupDocument,importBackup,cleanDocument} from './template-store.js';
+export function checkedCloudState(local,remote) {
+  if(remote.version!==local.version)throw new Error('다른 기기에서 온라인 양식이 변경되었습니다. 온라인 최신본을 불러온 뒤 수정해 주세요.');
+  return {...local,isPublic:remote.isPublic};
+}
 export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
   const $=id=>document.getElementById(id), status=$('library-status');
   const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el;};
@@ -14,15 +19,14 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
   };
   const button=(label,callback)=>{const el=node('button',label,'secondary-button');el.type='button';el.addEventListener('click',action(callback));return el;};
   function download(blob,name) {const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  async function api(input) {const response=await fetch('/api/library',{method:input.op==='list'?'GET':'POST',headers:input.op==='list'?{}:{'Content-Type':'application/json'},...(input.op==='list'?{}:{body:JSON.stringify(input)})});const result=await response.json();if(!response.ok){const error=new Error(result.error || '공유 저장소에 연결할 수 없습니다.');error.status=response.status;throw error;}return result;}
+  async function api(input) {return requestJson('/api/library',{method:input.op==='list'?'GET':'POST',headers:input.op==='list'?{}:{'Content-Type':'application/json'},...(input.op==='list'?{}:{body:JSON.stringify(input)})});}
   async function generate(item) {
-    const response=await fetch('/api/hwpx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:item.settings,title:item.title,confirmed:true})});
-    const result=await response.json();if(!response.ok)throw new Error(result.error || '파일을 만들지 못했습니다.');
-    return {fileLayoutVersion:result.layoutVersion,file:new Blob([Uint8Array.from(atob(result.fileBase64),c=>c.charCodeAt(0))],{type:'application/hwp+zip'}),fileName:result.fileName};
+    const result=await requestJson('/api/hwpx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:item.settings,title:item.title,confirmed:true})});
+    return {fileLayoutVersion:result.layoutVersion,file:new Blob([generatedFileBytes(result)],{type:'application/hwp+zip'}),fileName:result.fileName};
   }
   async function openShare(id) {
     let item=await getForm(id); if(!item)throw new Error('양식을 찾을 수 없습니다.');
-    if(item.cloud){try{const {item:remote}=await api({op:'get',id:item.cloud.id,token:item.cloud.token});item=await setCloud(id,{...item.cloud,version:remote.version,isPublic:remote.isPublic});}catch(error){if(error.status===404)item=await setCloud(id,null);else throw error;}}
+    if(item.cloud){try{const {item:remote}=await api({op:'get',id:item.cloud.id,token:item.cloud.token});item=await setCloud(id,checkedCloudState(item.cloud,remote));}catch(error){if(error.status===404)item=await setCloud(id,null);else throw error;}}
     sharingId=id;$('share-document-name').textContent=item.title;$('share-consent').checked=item.cloud?.isPublic===true;
     $('share-anonymous').checked=item.cloud?.isAnonymous!==false;$('share-author').value=item.cloud?.authorName || '';
     $('share-author').disabled=$('share-anonymous').checked;$('share-requirements').checked=item.cloud?.includeRequirements===true;
@@ -52,7 +56,7 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
     const version=++searchVersion;$('public-status').textContent='공개 양식을 찾고 있습니다.';
     const url=new URL('/api/library',location.origin);url.searchParams.set('op','list');url.searchParams.set('q',$('public-search').value.trim());url.searchParams.set('page',publicPage);
     try{
-      const response=await fetch(url);const result=await response.json();if(!response.ok)throw new Error(result.error || '검색에 실패했습니다.');if(version!==searchVersion)return;
+      const result=await requestJson(url);if(version!==searchVersion)return;
       $('public-status').textContent=result.items.length?`${publicPage+1}페이지 · ${result.items.length}개`:'공개된 양식이 없습니다.';
       $('public-previous').disabled=publicPage===0;$('public-next').disabled=!result.hasMore;
       const list=$('public-templates');list.replaceChildren();

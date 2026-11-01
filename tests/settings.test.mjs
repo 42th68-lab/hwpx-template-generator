@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { analyzeInputs, getAnalysisConfig } from "../settings-analyzer.mjs";
-import { validateSettings } from "../settings-model.js";
+import { validateSettings, reconcileItemReferences, fieldLabel } from "../settings-model.js";
 
 const complete = "A4 세로, 모든 여백 20mm, 글꼴 맑은 고딕, 본문 10pt, 줄 간격 160%. 필수 항목: 연구 목적, 방법, 결과, 결론.";
 const analyze = (prompt, files = []) => analyzeInputs({ prompt, files }, { env: {} });
@@ -295,4 +295,23 @@ test('AI cannot turn document roles into duplicate required items in a mixed pro
  const response={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions:[{field:'requiredItems',value:'제목',sourceId:'prompt',quote:'구성: 제목 → Abstract → 본문(서론·본론·결론) → 참고문헌',action:'include'},{field:'requiredItems',value:'본문',sourceId:'prompt',quote:'본문(서론·본론·결론)',action:'include'}]})}]}}]};
  const r=await analyzeInputs({prompt,files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json(response)});
  assert.deepEqual(r.settings.requiredItems,['Abstract','서론','본론','결론','참고문헌']);assert(!r.warnings.some(w=>w.type==='unsupported'));
+});
+
+
+test('Unicode ranges and unit-free alternatives never become a guessed single font size',async()=>{
+ for(const range of ['10–12pt','10—12pt','10±1pt','10부터 12pt','10 또는 12pt']){const r=await analyze('본문 '+range);assert.equal(r.settings.fontSizePt,null,range);assert(r.warnings.some(w=>w.type==='unparsed'));}
+});
+
+test('changing required items removes orphan table, column-start and section-style references',async()=>{
+ const {settings}=await analyze(complete);Object.assign(settings,{documentOptions:{coverPage:false,contentsPage:false,tableItems:['방법','결과']},columns:{count:2,startItem:'방법'},sectionStyles:[{item:'방법',fontSizePt:13},{item:'결과',alignment:'right'}]});
+ settings.requiredItems=['연구 목적','결과'];reconcileItemReferences(settings);
+ assert.deepEqual(settings.documentOptions.tableItems,['결과']);assert.equal(settings.columns.startItem,null);assert.deepEqual(settings.sectionStyles,[{item:'결과',alignment:'right'}]);assert.deepEqual(validateSettings(settings),[]);
+});
+
+test('invalid JSON settings types and prototype-like AI fields do not crash validation',async()=>{
+ for(const value of [null,42,[],{schemaVersion:1,paper:{size:{toString:42}},fontFamily:42,lineSpacing:{unit:{toString:42}},requiredItems:{},columns:{startItem:'x'},alignment:{title:{toString:42}},sectionStyles:[{item:'x',alignment:{toString:42}}]}])assert(validateSettings(value).length>0);
+ assert.equal(fieldLabel('__proto__'),undefined);assert.equal(fieldLabel('toString'),undefined);
+ const conditions=[null,{field:'__proto__',value:'bad',sourceId:'prompt',quote:'글꼴 프리텐다드',action:'include'},{field:'fontFamily',value:'프리텐다드',sourceId:'prompt',quote:'글꼴 프리텐다드',action:'include'}];
+ const r=await analyzeInputs({prompt:'글꼴 프리텐다드',files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions})}]}}]})});
+ assert.equal(r.engine,'gemini');assert.equal(r.settings.fontFamily,'프리텐다드');assert(r.warnings.some(w=>w.code==='INVALID_CONDITION'));
 });

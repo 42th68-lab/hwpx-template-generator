@@ -1,3 +1,4 @@
+import {checkedCloudState} from '../library-ui.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
@@ -48,4 +49,20 @@ test('cloud save canonicalizes advanced settings through generated output withou
  }});
  const response=await handler(new Request('https://test.invalid',{method:'POST',headers:{apikey:'public-key'},body:JSON.stringify({op:'save',payload:{...doc,storageConsent:true,publish:false,authorName:'',isAnonymous:true}})}));
  assert.equal(response.status,200);const result=await response.json();assert(uploaded);assert.equal(result.item.settings.columns.gapMm,7.04);assert.equal(stored.settings.headerFooterMm.header,20);assert.equal(stored.settings.sectionStyles[0].maxLines,8);assert.equal(stored.settings.typography.titleSizePt,17);assert.equal(stored.settings.documentTitle,doc.title);assert.equal(stored.settings.documentOptions.numberedItems,false);assert.equal(stored.is_public,false);assert.equal(stored.manage_hash.length,64);assert.notEqual(stored.manage_hash,result.token);
+});
+
+
+test('opening sharing controls cannot silently acknowledge a newer remote version',()=>{
+ const local={id:'id',token:'local-management',version:1,isPublic:false};
+ assert.throws(()=>checkedCloudState(local,{version:2,isPublic:true}),/최신본/);assert.equal(local.version,1);
+ assert.deepEqual(checkedCloudState(local,{version:1,isPublic:true}),{...local,isPublic:true});
+});
+
+test('private cloud ownership and stale-write guards run before file generation or mutation',async()=>{
+ const management='a'.repeat(64),hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(management)))].map(n=>n.toString(16).padStart(2,'0')).join('');
+ const row={id:'11111111-1111-4111-8111-111111111111',is_public:false,manage_hash:hash,version:3,title:'private',requirements:'private input',settings:document().settings,history:[]};let mutations=0;
+ const handler=createLibraryHandler({env:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEYS:'{"default":"server-secret"}',SUPABASE_PUBLISHABLE_KEYS:'{"default":"public-key"}'},fetchImpl:async(url,init)=>{if(init.method!=='GET'){mutations++;throw Error('Unexpected mutation');}return Response.json([row]);}});
+ const call=async(op,token,version)=>handler(new Request('https://test.invalid',{method:'POST',headers:{apikey:'public-key'},body:JSON.stringify({op,id:row.id,token,version})}));
+ assert.equal((await call('get')).status,404);assert.equal((await call('get','b'.repeat(64))).status,404);assert.equal((await call('get',management)).status,200);
+ assert.equal((await call('save','b'.repeat(64),3)).status,403);assert.equal((await call('delete','b'.repeat(64))).status,403);assert.equal((await call('save',management,2)).status,409);assert.equal(mutations,0);
 });

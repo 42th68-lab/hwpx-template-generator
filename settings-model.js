@@ -146,11 +146,12 @@ export const FIELD_LABELS = {
 export const ALIGNMENTS = { left: "왼쪽", right: "오른쪽", center: "가운데", justify: "양쪽", distribute: "배분" };
 export const sectionField = (item, property) => `sectionStyles.${encodeURIComponent(item).replace(/\./g,'%2E')}.${property}`;
 export function sectionPath(path) {
+  if(typeof path!=="string")return null;
   const match = /^sectionStyles\.([^.]+)\.(alignment|maxLines|fontSizePt)$/.exec(path);
   if (!match) return null;
   try { const item = decodeURIComponent(match[1]); return item && item.length <= 100 ? { item, property: match[2] } : null; } catch { return null; }
 }
-export const fieldLabel = path => { const section = sectionPath(path); return section ? `${section.item} ${{alignment:'정렬',maxLines:'최대 줄 수',fontSizePt:'글자 크기'}[section.property]}` : FIELD_LABELS[path]; };
+export const fieldLabel = path => { if(typeof path!=="string")return undefined;const section = sectionPath(path); return section ? `${section.item} ${{alignment:'정렬',maxLines:'최대 줄 수',fontSizePt:'글자 크기'}[section.property]}` : Object.hasOwn(FIELD_LABELS,path)?FIELD_LABELS[path]:undefined; };
 export const isNumericField = path => /^(?:marginsMm\.|headerFooterMm\.|limits\.)/.test(path) || ['fontSizePt','columns.count','columns.gapMm'].includes(path) || path.startsWith('typography.') || /\.(?:maxLines|fontSizePt)$/.test(path);
 
 // Canonical optional groups are shared by generation and local backup/import.
@@ -172,6 +173,15 @@ export function emptySettings() {
     fontFamily: null, fontSizePt: null,
     lineSpacing: { value: null, unit: null }, requiredItems: [],
   };
+}
+
+// Editing an item list must not leave hidden formatting/table references behind.
+export function reconcileItemReferences(settings) {
+  const items=new Set(settings.requiredItems);
+  if(settings.sectionStyles)settings.sectionStyles=settings.sectionStyles.filter(style=>items.has(style.item));
+  if(settings.columns?.startItem && !items.has(settings.columns.startItem))settings.columns.startItem=null;
+  if(settings.documentOptions?.tableItems)settings.documentOptions.tableItems=settings.documentOptions.tableItems.filter(item=>items.has(item));
+  return settings;
 }
 
 export function getSetting(settings, path) {
@@ -211,9 +221,12 @@ export function formatSetting(path, value) {
 export function validateSettings(settings) {
   const warnings = [];
   const warn = (type, field, message) => warnings.push({ type, field, message });
+  if(!settings||typeof settings!=='object'||Array.isArray(settings))return [{type:'invalid',field:null,message:'문서 설정은 JSON 객체여야 합니다.'}];
   const size = settings.paper?.size;
+  const knownPaper=typeof size==='string' && Object.hasOwn(PAPER_SIZES,size);
+  if(settings.schemaVersion!==1)warn('invalid',null,'지원하는 문서 설정 버전이 아닙니다.');
   if (!size) warn("missing", "paper.size", "용지 크기를 지정해 주세요.");
-  else if (!Object.hasOwn(PAPER_SIZES, size)) warn("invalid", "paper.size", "지원하는 용지 크기를 선택해 주세요.");
+  else if (!knownPaper) warn("invalid", "paper.size", "지원하는 용지 크기를 선택해 주세요.");
   if (settings.paper?.orientation != null && !["portrait", "landscape"].includes(settings.paper.orientation)) {
     warn("invalid", "paper.orientation", "용지 방향은 세로 또는 가로여야 합니다.");
   }
@@ -225,7 +238,7 @@ export function validateSettings(settings) {
       warn("invalid", path, `${FIELD_LABELS[path]}은 0~150 mm 사이의 숫자로 입력해 주세요.`);
     }
   }
-  if (Object.hasOwn(PAPER_SIZES, size)) {
+  if (knownPaper) {
     const [short, long] = PAPER_SIZES[size];
     const [width, height] = settings.paper.orientation === "landscape" ? [long, short] : [short, long];
     const m = settings.marginsMm;
@@ -235,7 +248,7 @@ export function validateSettings(settings) {
       }
     }
   }
-  if (!settings.fontFamily?.trim()) warn("missing", "fontFamily", "글꼴을 지정해 주세요.");
+  if (typeof settings.fontFamily!=='string'||!settings.fontFamily.trim()) warn("missing", "fontFamily", "글꼴을 지정해 주세요.");
   else if (settings.fontFamily.length > 80) warn("invalid", "fontFamily", "글꼴 이름은 80자 이내로 입력해 주세요.");
   if(settings.documentTitle!=null && (typeof settings.documentTitle!=='string' || !settings.documentTitle.trim() || settings.documentTitle.length>80 || /[\x00-\x1f]/.test(settings.documentTitle)))warn('invalid','documentTitle','문서 제목은 한 줄, 80자 이내로 입력해 주세요.');
   const fontSize = settings.fontSizePt;
@@ -246,7 +259,7 @@ export function validateSettings(settings) {
   const spacing = settings.lineSpacing;
   if (spacing?.value == null) warn("missing", "lineSpacing", "줄 간격과 단위를 지정해 주세요.");
   else {
-    const maximum = { percent: 500, pt: 200, multiple: 5 }[spacing.unit];
+    const maximum = typeof spacing.unit==='string' ? { percent: 500, pt: 200, multiple: 5 }[spacing.unit] : undefined;
     if (!maximum || typeof spacing.value !== "number" || !Number.isFinite(spacing.value) || spacing.value <= 0 || spacing.value > maximum) {
       warn("invalid", "lineSpacing", "줄 간격의 단위와 값을 확인해 주세요. (최대 500%, 200 pt, 5배)");
     }
@@ -256,7 +269,7 @@ export function validateSettings(settings) {
     warn("invalid", "requiredItems", "필수 항목은 최대 50개, 항목당 100자 이내로 입력해 주세요.");
   }
   const options=settings.documentOptions;
-  if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !settings.requiredItems?.includes(item)) || (options.numberedItems!=null&&typeof options.numberedItems!=='boolean'))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');
+  if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !(Array.isArray(settings.requiredItems)&&settings.requiredItems.includes(item))) || (options.numberedItems!=null&&typeof options.numberedItems!=='boolean'))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');
   for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body','heading'],typography:['titleSizePt','headingSizePt'],limits:['maxPages','titleMaxLines']})) {
     if (settings[group] != null && (typeof settings[group] !== 'object' || Array.isArray(settings[group]))) { warn('invalid',group,`${group}: 설정 형식이 잘못되었습니다.`); continue; }
     for (const key of keys) {
@@ -266,8 +279,8 @@ export function validateSettings(settings) {
       if (group === 'headerFooterMm' || path === 'columns.gapMm') valid = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 150;
       else if (path === 'columns.count') valid = Number.isInteger(value) && value >= 1 && value <= 8;
       else if (path === 'columns.scope') valid = ['body','document'].includes(value);
-      else if (path === 'columns.startItem') valid = typeof value === 'string' && settings.requiredItems?.includes(value);
-      else if (group === 'alignment') valid = Object.hasOwn(ALIGNMENTS,value);
+      else if (path === 'columns.startItem') valid = typeof value === 'string' && Array.isArray(settings.requiredItems) && settings.requiredItems.includes(value);
+      else if (group === 'alignment') valid = typeof value==='string' && Object.hasOwn(ALIGNMENTS,value);
       else if (group === 'typography') valid = typeof value==='number' && Number.isFinite(value) && value>=1 && value<=100;
       else if (group === 'limits') valid = Number.isInteger(value) && value > 0 && value <= 1000;
       if (!valid) warn('invalid',path,`${FIELD_LABELS[path]}의 값과 지원 범위를 확인해 주세요.`);
@@ -283,19 +296,19 @@ export function validateSettings(settings) {
         seen.add(style.item);
         for (const property of ['alignment','maxLines','fontSizePt']) {
           const value = style[property]; if (value == null) continue;
-          const valid = property === 'alignment' ? Object.hasOwn(ALIGNMENTS,value) : property === 'maxLines' ? Number.isInteger(value) && value > 0 && value <= 1000 : typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 100;
+          const valid = property === 'alignment' ? typeof value==='string' && Object.hasOwn(ALIGNMENTS,value) : property === 'maxLines' ? Number.isInteger(value) && value > 0 && value <= 1000 : typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 100;
           if (!valid) warn('invalid',sectionField(style.item,property),`${style.item}: ${property} 값을 확인해 주세요.`);
         }
         if (Array.isArray(settings.requiredItems) && !settings.requiredItems.includes(style.item)) warn('invalid','sectionStyles',`${style.item}: 필수 항목에 없는 서식입니다. 항목 이름을 맞추거나 서식을 삭제해 주세요.`);
       }
     }
   }
-  if (Object.hasOwn(PAPER_SIZES,size)) {
+  if (knownPaper) {
     const dims = PAPER_SIZES[size], width = settings.paper.orientation === 'landscape' ? dims[1] : dims[0];
     const usable = width - (settings.marginsMm?.left ?? 0) - (settings.marginsMm?.right ?? 0);
     if (usable - ((settings.columns?.count ?? 1)-1)*(settings.columns?.gapMm ?? 0) <= 0) warn('invalid','columns.gapMm','단 간격의 합이 본문 너비 이상입니다.');
   }
-  if(Object.hasOwn(PAPER_SIZES,size)){
+  if(knownPaper){
     const dims=PAPER_SIZES[size],height=settings.paper.orientation==='landscape'?dims[0]:dims[1];
     const vertical=(settings.marginsMm?.top ?? 0)+(settings.marginsMm?.bottom ?? 0)+(settings.headerFooterMm?.header ?? 0)+(settings.headerFooterMm?.footer ?? 0);
     if(vertical>=height)warn('invalid','headerFooterMm.header','위·아래·머리말·꼬리말 여백의 합이 용지 높이 이상입니다.');

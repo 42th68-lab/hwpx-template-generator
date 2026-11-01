@@ -6,7 +6,7 @@ import { analyzeInputs } from "../settings-analyzer.mjs";
 import { validateHwpx } from "../hwpx-validation.mjs";
 import { previewModel, renderDocumentPreview } from "../document-preview.js";
 import { checkUploadLimits, UPLOAD_LIMITS } from "../upload-limits.js";
-import { timedRequest } from '../upload-limits.js';
+import { timedRequest, requestJson, generatedFileBytes } from '../upload-limits.js';
 import { versionWebAssets } from '../scripts/build-web.mjs';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
@@ -108,4 +108,29 @@ test('requirements -> analysis API -> HWPX API -> preview renderer keeps the rig
  const left=nodes.find(n=>n.textContent==='2. 서론'),right=nodes.find(n=>n.textContent==='4. 결론');
  assert(left&&right);assert.notEqual(left.style.left,right.style.left);assert.equal(left.style.top,right.style.top);
  assert(sheets[0].children.includes(left)&&sheets[0].children.includes(right));assert(nodes.some(n=>n.textContent==='생성 파일 기준'));
+});
+
+
+test('library JSON requests time out, release timers, preserve HTTP status and reject invalid responses',async()=>{
+ let callback,clears=0;const timers={setTimeout(fn){callback=fn;return 1;},clearTimeout(){clears++;}};
+ const pending=requestJson('/api/library',{}, {timers,fetchImpl:async(url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError'))))});
+ callback();await assert.rejects(pending,/시간이 초과/);assert.equal(clears,1);
+ await assert.rejects(requestJson('/api/library',{}, {timers,fetchImpl:async()=>new Response('<html>bad gateway</html>',{status:502,headers:{'content-type':'text/html'}})}),/서버 응답/);
+ await assert.rejects(requestJson('/api/library',{}, {timers,fetchImpl:async()=>Response.json({error:'찾을 수 없습니다.'},{status:404})}),e=>e.status===404);
+ await assert.rejects(requestJson('/api/library',{}, {timers,fetchImpl:async()=>Response.json(null)}),/서버 응답/);
+ const ok=await requestJson('/api/library',{}, {timers,fetchImpl:async()=>Response.json({items:[]})});assert.deepEqual(ok,{items:[]});assert.equal(clears,5);
+});
+
+test('every download path rejects HTML, malformed base64 and unsafe names before exposing a file',async()=>{
+ const {settings}=await analyzeInputs({prompt,files:[]},{env:{}}),response=await createApiHandler()(new Request('https://test.invalid/api/hwpx',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({settings,confirmed:true})}));const result=await response.json();
+ assert((await validateHwpx(Buffer.from(generatedFileBytes(result)))).passed);
+ for(const change of [{fileBase64:Buffer.from('<html>error</html>').toString('base64')},{fileBase64:'not!base64=='},{validation:{passed:false}},{fileName:'../../file.hwpx'},{fileName:'error.html'},{fileBase64:null}])assert.throws(()=>generatedFileBytes({...result,...change}),/생성 파일 데이터/);
+});
+
+test('editing each document option resolves its own pending conflict',async()=>{
+ const source=await readFile(new URL('../app.js',import.meta.url),'utf8');const block=source.match(/for\(const \[id,field\] of Object\.entries\(\{'setting-cover':[\s\S]+?refreshSettings\(\);\}\);/)[0];
+ const events=new Map(),reviewedFields=new Set();let refreshes=0;
+ const context={settings:{},reviewedFields,confirmed:true,readSettingsControls(){},refreshSettings(){refreshes++;},document:{getElementById:id=>({addEventListener:(event,callback)=>events.set(id,callback)})}};
+ runInNewContext(block,context);for(const id of ['setting-cover','setting-contents','setting-tables','setting-numbered'])events.get(id)();
+ assert.equal(context.confirmed,false);assert.equal(refreshes,4);assert.deepEqual([...reviewedFields].sort(),['documentOptions.contentsPage','documentOptions.coverPage','documentOptions.numberedItems','documentOptions.tableItems']);
 });

@@ -128,9 +128,10 @@ function advancedConditions(quote,row,add,warn) {
 function ambiguousNumber(quote, match) {
   const before = quote.slice(0, match.index);
   const after = quote.slice(match.index + match[0].length);
-  return /[~〜～\-<>≤≥]\s*$/.test(before)
+  return /[~〜～\-–—−±<>≤≥]\s*$/.test(before)
+    || /\d\s*(?:부터|에서|또는|혹은)\s*$/.test(before)
     || /(?:최소|최대|약|대략)[^,;\n0-9]{0,20}$/.test(before)
-    || /^\s*(?:[~〜～\-<>≤≥]|이상|이하|미만|초과|내외)/.test(after);
+    || /^\s*(?:[~〜～\-–—−±<>≤≥]|이상|이하|미만|초과|내외)/.test(after);
 }
 
 function verbalSpacing(quote) {
@@ -455,6 +456,10 @@ value는 문자열이다. 여백은 mm 또는 cm가 붙은 값, 글자 크기는
   const conditions = [];
   const warnings = [];
   for (const proposed of parsed.conditions) {
+    if(!proposed || typeof proposed!=='object' || typeof proposed.field!=='string'){
+      if(!warnings.some(w=>w.code==='INVALID_CONDITION'))warnings.push({type:'unparsed',field:null,code:'INVALID_CONDITION',message:'AI가 반환한 일부 조건 형식을 읽지 못했습니다. 원문과 설정을 확인해 주세요.'});
+      continue;
+    }
     const item={...proposed,field:canonicalAiField(proposed?.field,deterministic.filter(c=>c.field==='requiredItems'&&c.action==='include').map(c=>c.value))};
     const source = sources.find((entry) => entry.id === item.sourceId);
     // Explicit two-column table rows are parsed deterministically. Do not add AI

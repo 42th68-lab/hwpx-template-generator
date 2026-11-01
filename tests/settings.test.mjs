@@ -288,3 +288,11 @@ test('unmapped AI conditions require grounded evidence and unsupported formattin
  assert(r.warnings.some(w=>w.type==='unsupported'&&w.details.some(d=>d.quote==='기관 로고를 삽입해 줘')));assert(!JSON.stringify(r).includes('가짜 조건'));
  const table=await analyze(complete+' 방법은 5행 4열 표로 만들어 줘.');assert(table.warnings.some(w=>w.type==='unsupported'&&w.details.some(d=>d.reason.includes('행·열'))));
 });
+
+
+test('AI cannot turn document roles into duplicate required items in a mixed prose composition list',async()=>{
+ const prompt='A4 세로, 머리글 20mm 바닥글 10mm, 글꼴 바탕체, 본문 10pt. 구성: 제목 → Abstract → 본문(서론·본론·결론) → 참고문헌';
+ const response={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({conditions:[{field:'requiredItems',value:'제목',sourceId:'prompt',quote:'구성: 제목 → Abstract → 본문(서론·본론·결론) → 참고문헌',action:'include'},{field:'requiredItems',value:'본문',sourceId:'prompt',quote:'본문(서론·본론·결론)',action:'include'}]})}]}}]};
+ const r=await analyzeInputs({prompt,files:[]},{env:{GEMINI_API_KEY:'mock-key'},fetchImpl:async()=>Response.json(response)});
+ assert.deepEqual(r.settings.requiredItems,['Abstract','서론','본론','결론','참고문헌']);assert(!r.warnings.some(w=>w.type==='unsupported'));
+});

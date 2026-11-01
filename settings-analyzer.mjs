@@ -67,7 +67,8 @@ function tableInfo(source) {
 
 function unsupportedReasons(text,label='') {
   const reasons=[];
-  if(/머리글|바닥글|헤더|푸터/.test(text)&&/pt|포인트|글꼴|텍스트|내용/.test(text))reasons.push('머리글·바닥글의 내용·글자 서식은 아직 지원하지 않습니다. 위치는 적용합니다.');
+  const headerContent=[...text.matchAll(/(?:머리글|바닥글|헤더|푸터)([^,;|.]*)/g)].some(match=>/pt|포인트|글꼴|텍스트|내용/.test(match[1].split(/머리글|바닥글|헤더|푸터|본문|제목/)[0]));
+  if(headerContent)reasons.push('머리글·바닥글의 내용·글자 서식은 아직 지원하지 않습니다. 위치는 적용합니다.');
   if(/굵게|진하게|기울임|밑줄|볼드|\bbold\b|\bitalic\b/i.test(text))reasons.push('굵기·기울임·밑줄 지정은 아직 자동 적용하지 못합니다.');
   if(/(?:글자색|글씨색|글자 색|글씨 색)|(?:빨간|파란|붉은|초록|빨강|파랑).*글(?:자|씨)/.test(text))reasons.push('글자 색상은 아직 자동 적용하지 못합니다.');
   if(/(?:그림|이미지|사진|수식|로고)(?:를|을)?\s*(?:추가|넣|삽입)/.test(text))reasons.push('그림·수식·로고 삽입은 아직 지원하지 않습니다.');
@@ -409,7 +410,7 @@ async function extractGemini(sources, env, fetchImpl, deterministic = []) {
 명시된 문서 조건만 추출한다. 조건이 없으면 추측/기본값을 만들지 마라. 서로 다른 조건은 모두 별도 항목으로 출력한다. sourceId와 원문의 정확한 인용 quote를 반드시 남긴다. 예시 속 조건은 실제 제출 조건으로 취급하지 않는다.
 field는 paper.size(A3,A4,A5,B4,B5,LETTER,LEGAL), paper.orientation(portrait,landscape), marginsMm.top/bottom/left/right, fontFamily, fontSizePt, lineSpacing, requiredItems, headerFooterMm.header/footer(mm), columns.count(정수), columns.gapMm(mm), columns.scope(body 또는 document), alignment.title/body/heading(left,right,center,justify,distribute), documentTitle(명시한 실제 제목 문자열), typography.titleSizePt/headingSizePt(제목/항목 제목 pt 크기), documentOptions.coverPage/contentsPage/numberedItems(true/false), documentOptions.tableItems(표로 작성하라는 필수 항목 이름), limits.maxPages, limits.titleMaxLines(정수)다.
 임의의 항목 전용 정렬·줄 제한·글자 크기는 sectionStyles.항목이름.alignment 또는 .maxLines 또는 .fontSizePt다. 예: sectionStyles.Abstract.alignment 값 left. 항목 이름은 실제 필수 항목 이름과 같게 쓴다. 항목 이름 내부의 마침표만 %2E로 인코딩하고 field 경로를 나누는 두 마침표는 변경하지 마라. 최대/이내 조건은 limits 또는 maxLines에만 넣고 그 외 서식의 범위는 단일 값으로 단정하지 않는다.
-위 목록 이외의 field를 만들지 마라. 특히 language, title, sections 같은 field는 없다. 국문/영문 중 선택 조건은 fontFamily 후보를 각각 남겨라. 표로 작성하지 말라는 조건은 작성 표 제외이며 본문 항목 자체를 제외하는 뜻이 아니다. 표지·목차 추가는 documentOptions이며 본문 필수 항목에 중복 추가하지 마라. 전체 서식은 모든 역할에 적용하되 명시적인 역할·항목 전용 서식이 우선한다.
+위 목록 이외의 field를 만들지 마라. 특히 language, title, sections 같은 field는 없다. 국문/영문 중 선택 조건은 fontFamily 후보를 각각 남겨라. 표로 작성하지 말라는 조건은 작성 표 제외이며 본문 항목 자체를 제외하는 뜻이 아니다. 표지·목차 추가는 documentOptions이며 본문 필수 항목에 중복 추가하지 마라. 구성의 제목은 문서 제목 역할이고 본문(서론·본론·결론)은 하위 항목으로 나누므로 제목·본문을 별도 필수 항목으로 중복 추가하지 마라. 전체 서식은 모든 역할에 적용하되 명시적인 역할·항목 전용 서식이 우선한다.
 value는 문자열이다. 여백은 mm 또는 cm가 붙은 값, 글자 크기는 pt, 줄 간격은 % 또는 pt 또는 배 단위로 적는다. 제목/각주 전용 글자 크기를 본문 값으로 넣지 마라. 범위나 이상/이하 조건은 단일 값으로 단정하지 마라.
 반환 JSON은 {"conditions":[{"field":"fontSizePt","value":"11pt","sourceId":"prompt","quote":"원문의 정확한 부분","action":"include"}]} 형식이다. 실제 조건이 없으면 conditions를 빈 배열로 반환한다. 요구된 서식 중 이 field들로 표현할 수 없는 조건은 unhandled 배열에 {sourceId,quote,reason}으로 반드시 보고하라. 필수 설정이 빠져 있다는 이유만으로 unhandled를 만들지 마라. 출처의 명시적 조건만 보고하라.
 필수 항목은 항목마다 한 조건으로 분리한다. 여러 출처의 필수 항목은 추가 조건이다. 명시적 제외 항목만 action=exclude, 나머지는 include다. '모든 여백 20mm'처럼 전체 조건이면 네 방향을 별도 출력한다.` }] },
@@ -469,6 +470,11 @@ value는 문자열이다. 여백은 mm 또는 cm가 붙은 값, 글자 크기는
       if(source && field && deterministic.some(condition=>condition.sourceId===source.id&&condition.field===field))continue;
       if(!warnings.some(warning=>warning.field===field))warnings.push({ type: "unparsed", field, message: `${field?fieldLabel(field)+': ':typeof item.field==='string'?item.field.slice(0,60)+': ':''}AI 제안의 값·단위 또는 원문 근거를 확인하지 못해 적용하지 않았습니다. 해당 설정과 원문을 확인해 주세요.`,...(source&&quote&&normalize(source.text).includes(quote)?{sourceId:source.id,sourceName:source.name,quote}:{}) });
       continue;
+    }
+    if(item.field==='requiredItems' && item.action==='include'){
+      const explicitList=sourceClauses(source.text).some(clause=>/(?:필수\s*(?:항목|목차)|구성(?:\s*항목)?|목차)\s*[:：=]/.test(clause.quote) && (clause.quote.includes(quote)||quote.includes(clause.quote)) && deterministic.some(c=>c.sourceId===source.id&&c.field==='requiredItems'&&c.quote===clause.quote));
+      if(explicitList)continue;
+      if(/^(?:제목|문서\s*제목|title|본문|body)$/i.test(value) && !deterministic.some(c=>c.sourceId===source.id&&c.field==='requiredItems'&&c.value===value))continue;
     }
     if(item.field==='requiredItems' && ['표지','목차'].includes(value) && !deterministic.some(c=>c.field==='requiredItems'&&c.value===value) && deterministic.some(c=>c.field===`documentOptions.${value==='표지'?'coverPage':'contentsPage'}`))continue;
     const equivalent=deterministic.find(c=>c.sourceId===source.id&&c.field===item.field&&identity(c.value)===identity(value));

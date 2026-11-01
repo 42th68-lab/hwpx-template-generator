@@ -252,3 +252,9 @@ test('balanced multi-column forms preserve order and stay inside the page for un
   for(const name of payload.settings.documentOptions.tableItems){const blocks=plan.paragraphs.filter(b=>b.item===name);assert.equal(new Set(blocks.map(b=>b.page+':'+b.column)).size,1);}
  }
 });
+
+
+test('an explicitly edited title replaces the analyzed title in both preview plan and applied settings',async()=>{
+ const payload=input();payload.settings.documentTitle='원래 제목';payload.title='수정 제목';const result=await generateHwpx(payload);
+ assert.equal(result.appliedSettings.documentTitle,'수정 제목');assert.equal(result.renderPlan.title,'수정 제목');
+});

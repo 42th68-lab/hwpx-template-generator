@@ -21,6 +21,23 @@ const readDocument = async (buffer) => {
   return { zip, section, header, texts };
 };
 
+test("an untitled form keeps an editable blank title and a usable filename", async () => {
+  for (const [title, documentTitle] of [[undefined, undefined], ["", "이전 제목"], ["문서 양식", ""]]) {
+    const payload=input();
+    payload.title=title;
+    payload.settings.documentTitle=documentTitle;
+    const result=await generateHwpx(payload);
+    const {section,texts}=await readDocument(result.buffer);
+    const first=findElement(section,"p");
+    assert.deepEqual(findElement(first.children,"t").children,[]);
+    assert.equal(result.renderPlan.paragraphs[0].role,"title");
+    assert.equal(result.renderPlan.paragraphs[0].text,"");
+    assert(!texts.includes("문서 양식"));
+    assert.equal(result.fileName,"문서_양식.hwpx");
+    assert(result.validation.passed);
+  }
+});
+
 test("trusted report template passes checks without changing the source", async () => {
   const original = await readFile(new URL("../assets/hwpx/basic-report.hwpx", import.meta.url));
   assert((await validateHwpx(original, { changed: false })).passed);

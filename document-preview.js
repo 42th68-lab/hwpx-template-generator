@@ -1,12 +1,12 @@
 import { formatSetting, PAPER_SIZES, ALIGNMENTS, buildDocumentPlan, DOCUMENT_LAYOUT_VERSION } from "./settings-model.js";
 
-export function previewModel(settings, title = "문서 양식") {
+export function previewModel(settings, title = settings.documentTitle ?? "") {
   const dimensions = PAPER_SIZES[settings.paper?.size];
   const landscape = settings.paper?.orientation === "landscape";
   const [width, height] = dimensions ? (landscape ? [...dimensions].reverse() : dimensions) : [210, 297];
   const numberOr = (value, fallback) => Number.isFinite(value) ? value : fallback;
   return {
-    title: title.trim() || "문서 양식",
+    title: title.trim(),
     width, height, geometryEstimated: !dimensions,
     bodySize: numberOr(settings.fontSizePt, 10),
     fontFamily: settings.fontFamily || "함초롬바탕",

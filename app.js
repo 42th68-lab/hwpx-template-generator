@@ -1,4 +1,4 @@
-import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField, reconcileItemReferences } from "./settings-model.js";
+import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField, reconcileItemReferences, UNTITLED_FORM_NAME, savedDocumentTitle } from "./settings-model.js";
 import { renderDocumentPreview } from "./document-preview.js";
 import { UPLOAD_LIMITS, checkUploadLimits, timedRequest, generatedFileBytes } from "./upload-limits.js";
 import { initializeLibrary } from "./library-ui.js";
@@ -121,7 +121,7 @@ finalButton.addEventListener('click',async()=>{
   if(file.size>UPLOAD_LIMITS.maxFileBytes){finalResult.textContent='PDF는 3.5MB 이하로 첨부해 주세요.';return;}
   invalidateFinalCheck();const requestId=++finalSequence,request=timedRequest(60000),controller=request.controller;finalController=controller;
   const signature=JSON.stringify([settings,documentTitle.value]);
-  const data=new FormData();data.set('file',file);data.set('settings',JSON.stringify(settings));data.set('title',documentTitle.value.trim()||'문서 양식');
+  const data=new FormData();data.set('file',file);data.set('settings',JSON.stringify(settings));data.set('title',documentTitle.value.trim());
   checkingFinal=true;finalButton.disabled=true;finalResult.textContent='PDF의 실제 쪽수와 항목별 텍스트 줄을 검사하고 있습니다.';
   try {
     const response=await fetch('/api/check-document',{method:'POST',body:data,signal:request.signal}),result=await responseJson(response);
@@ -516,7 +516,7 @@ hwpxButton.addEventListener("click", async () => {
   if (!confirmed || stale || generatingHwpx) return;
   clearHwpx();
   const submittedVersion = generationVersion;
-  const payload = { settings: structuredClone(settings), title: documentTitle.value.trim()||'문서 양식', confirmed: true };
+  const payload = { settings: structuredClone(settings), title: documentTitle.value.trim(), confirmed: true };
   generatingHwpx = true;
   const request=timedRequest(60000),controller=request.controller;generationController=controller;
   hwpxButton.disabled = true;
@@ -557,7 +557,8 @@ initializeLibrary({
   canSave:()=>Boolean(settings&&confirmed&&!stale),
   snapshot() {
     if (!settings || !confirmed || stale) throw new Error('문서 설정을 먼저 확인하고 확정해 주세요.');
-    return {title:documentTitle.value.trim()||'문서 양식',requirements:requirements.value,settings:structuredClone(settings),file:generatedBlob,fileLayoutVersion:generatedPlan?.version ?? null,fileName:generatedName};
+    const title=documentTitle.value.trim();
+    return {title:title||UNTITLED_FORM_NAME,requirements:requirements.value,settings:{...structuredClone(settings),documentTitle:title},file:generatedBlob,fileLayoutVersion:generatedPlan?.version ?? null,fileName:generatedName};
   },
   onLoad(item) {
     cancelAnalysis();invalidateFinalCheck();
@@ -567,7 +568,7 @@ initializeLibrary({
     characterCount.textContent = `${requirements.value.length} / 500`;
     selectedFiles = [];fileInput.value = '';renderFiles();resultContent.replaceChildren();
     analysis = {warnings:[],engine:'saved'};
-    settings = structuredClone(item.settings);settings.documentTitle=item.title;documentTitle.value = item.title;
+    settings = structuredClone(item.settings);settings.documentTitle=savedDocumentTitle(item);documentTitle.value = settings.documentTitle;
     reviewedFields = new Set();reviewedWarnings = new Set();confirmed=false;stale=false;
     clearHwpx();fillSettingsControls();refreshSettings();inputResult.hidden=false;
     collapseInput(true);
@@ -579,7 +580,7 @@ initializeLibrary({
     finalFile.value='';finalResult.replaceChildren();
     inputVersion += 1;analysis=null;settings=null;confirmed=false;stale=false;
     clearHwpx();requirements.value='';characterCount.textContent='0 / 500';selectedFiles=[];fileInput.value='';renderFiles();
-    documentTitle.value='문서 양식';inputResult.hidden=true;document.querySelector('#save-template').disabled=true;setMessage();collapseInput(false);requirements.focus();
+    documentTitle.value='';inputResult.hidden=true;document.querySelector('#save-template').disabled=true;setMessage();collapseInput(false);requirements.focus();
     for(const link of document.querySelectorAll('.workflow-steps a')){link.classList.remove('is-complete');if(link.dataset.step==='1')link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');}
   },
 });

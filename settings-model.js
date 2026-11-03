@@ -4,7 +4,13 @@ export const PAPER_SIZES = {
   B4: [250, 353], B5: [176, 250], LETTER: [215.9, 279.4], LEGAL: [215.9, 355.6],
 };
 
-export const DOCUMENT_LAYOUT_VERSION = 4;
+export const DOCUMENT_LAYOUT_VERSION = 5;
+export const UNTITLED_FORM_NAME = '문서 양식';
+
+export function savedDocumentTitle(form) {
+  // Older untitled records stored the library label as their title.
+  return form.settings.documentTitle ?? (form.title===UNTITLED_FORM_NAME?'':form.title);
+}
 const hwpMm = value => Math.round(value * 7200 / 25.4) / 100;
 export function documentLineHeight(size, spacing) {
   return Math.round((spacing?.unit === 'pt' ? spacing.value : size * (spacing?.unit === 'multiple' ? spacing.value : (spacing?.value ?? 160) / 100)) * 100) / 100;
@@ -100,7 +106,7 @@ export function buildDocumentPlan(settings, title=null) {
       if(offset<groups.length)newPage(page.kind,columnCount);
     }
   }
-  const safeTitle=(title || settings.documentTitle || '').trim()||'문서 양식';
+  const safeTitle=(title ?? settings.documentTitle ?? '').trim();
   const label=(item,index)=>options.numberedItems===false?item:`${index+1}. ${item}`;
   if(options.coverPage){newPage('cover');group(paragraph(safeTitle,'title'));for(const text of ['작성자:','소속:','작성일:'])group(paragraph(text));}
   if(options.contentsPage){newPage('contents');group(paragraph('목차','title'));for(const [index,item] of items.entries())group(paragraph(label(item,index)));}
@@ -295,7 +301,7 @@ export function validateSettings(settings) {
   }
   if (typeof settings.fontFamily!=='string'||!settings.fontFamily.trim()) warn("missing", "fontFamily", "글꼴을 지정해 주세요.");
   else if (settings.fontFamily.length > 80) warn("invalid", "fontFamily", "글꼴 이름은 80자 이내로 입력해 주세요.");
-  if(settings.documentTitle!=null && (typeof settings.documentTitle!=='string' || !settings.documentTitle.trim() || settings.documentTitle.length>80 || /[\x00-\x1f]/.test(settings.documentTitle)))warn('invalid','documentTitle','문서 제목은 한 줄, 80자 이내로 입력해 주세요.');
+  if(settings.documentTitle!=null && (typeof settings.documentTitle!=='string' || settings.documentTitle.length>80 || /[\x00-\x1f]/.test(settings.documentTitle)))warn('invalid','documentTitle','문서 제목은 한 줄, 80자 이내로 입력해 주세요.');
   const fontSize = settings.fontSizePt;
   if (fontSize == null) warn("missing", "fontSizePt", "본문 글자 크기를 지정해 주세요. (pt)");
   else if (typeof fontSize !== "number" || !Number.isFinite(fontSize) || fontSize < 1 || fontSize > 100) {

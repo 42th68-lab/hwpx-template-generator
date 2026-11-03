@@ -1,5 +1,5 @@
 import {requestJson,generatedFileBytes} from './upload-limits.js';
-import {DOCUMENT_LAYOUT_VERSION} from './settings-model.js';
+import {DOCUMENT_LAYOUT_VERSION,savedDocumentTitle} from './settings-model.js';
 import {allForms,getForm,saveForm,deleteForm,setCloud,backupDocument,importBackup,cleanDocument} from './template-store.js';
 export function checkedCloudState(local,remote) {
   if(remote.version!==local.version)throw new Error('다른 기기에서 온라인 양식이 변경되었습니다. 온라인 최신본을 불러온 뒤 수정해 주세요.');
@@ -21,7 +21,7 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
   function download(blob,name) {const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   async function api(input) {return requestJson('/api/library',{method:input.op==='list'?'GET':'POST',headers:input.op==='list'?{}:{'Content-Type':'application/json'},...(input.op==='list'?{}:{body:JSON.stringify(input)})});}
   async function generate(item) {
-    const result=await requestJson('/api/hwpx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:item.settings,title:item.title,confirmed:true})});
+    const result=await requestJson('/api/hwpx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:item.settings,title:savedDocumentTitle(item),confirmed:true})});
     return {fileLayoutVersion:result.layoutVersion,file:new Blob([generatedFileBytes(result)],{type:'application/hwp+zip'}),fileName:result.fileName};
   }
   async function openShare(id) {
@@ -42,7 +42,7 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
       const actions=node('div',undefined,'library-toolbar');
       actions.append(button('불러오기',async()=>{activeId=item.id;onLoad(item);status.textContent=`‘${item.title}’을 불러왔습니다. 수정 후 저장하면 같은 양식을 갱신합니다.`;}));
       actions.append(button('HWPX 내려받기',async()=>{let current=await getForm(item.id);if(!current.file || current.fileLayoutVersion!==DOCUMENT_LAYOUT_VERSION){const file=await generate(current);current=await saveForm({...current,...file});}download(current.file,current.fileName);}));
-      actions.append(button('복사',async()=>{const copy=await saveForm({...item,id:undefined,title:item.title.slice(0,74)+' 복사본',file:null,fileName:null});activeId=copy.id;await renderSaved();onLoad(copy);status.textContent='내 양식으로 복사했습니다. 원본은 바뀌지 않습니다.';}));
+      actions.append(button('복사',async()=>{const copy=await saveForm({...item,id:undefined,title:item.title.slice(0,74)+' 복사본',settings:{...item.settings,documentTitle:savedDocumentTitle(item)},file:null,fileName:null});activeId=copy.id;await renderSaved();onLoad(copy);status.textContent='내 양식으로 복사했습니다. 원본은 바뀌지 않습니다.';}));
       actions.append(button('온라인 보관·공개 설정',()=>openShare(item.id)));
       if(item.cloud)actions.append(button('온라인 최신본 불러오기',async()=>{const {item:remote}=await api({op:'get',id:item.cloud.id,token:item.cloud.token});const restored=await saveForm({...cleanDocument(remote),id:item.id,file:null,cloudHistory:remote.history});await setCloud(item.id,{...item.cloud,version:remote.version,isPublic:remote.isPublic,isAnonymous:remote.isAnonymous,authorName:remote.authorName,includeRequirements:remote.includeRequirements});activeId=item.id;onLoad(restored);await renderSaved();status.textContent='온라인에 보관한 최신 설정과 수정 이력을 불러왔습니다.';}));
       if(item.cloud?.isPublic) actions.append(button('공유 링크 복사',async()=>{await navigator.clipboard.writeText(`${location.origin}/?template=${item.cloud.id}`);status.textContent='공개 양식 링크를 복사했습니다.';}));

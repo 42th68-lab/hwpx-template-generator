@@ -4,7 +4,7 @@ export const PAPER_SIZES = {
   B4: [250, 353], B5: [176, 250], LETTER: [215.9, 279.4], LEGAL: [215.9, 355.6],
 };
 
-export const DOCUMENT_LAYOUT_VERSION = 3;
+export const DOCUMENT_LAYOUT_VERSION = 4;
 const hwpMm = value => Math.round(value * 7200 / 25.4) / 100;
 export function documentLineHeight(size, spacing) {
   return Math.round((spacing?.unit === 'pt' ? spacing.value : size * (spacing?.unit === 'multiple' ? spacing.value : (spacing?.value ?? 160) / 100)) * 100) / 100;
@@ -117,7 +117,11 @@ export function buildDocumentPlan(settings, title=null) {
       const labels=['구분','내용'].map((label,index)=>lines(label,cellSize,labelWidths[index]));
       const rowHeight=Math.max(28,Math.round(cellSize*200+1000)/100,documentLineHeight(cellSize,spacing)*Math.max(...labels.map(parts=>parts.length))+4);
       blocks.push({type:'table',role:'body',item,fontSizePt:cellSize,bold:false,alignment:rule?.alignment ?? settings.alignment?.body ?? 'justify',height:rowHeight*3,rowHeight,cellLineHeight:documentLineHeight(cellSize,spacing),rows:[labels.map(parts=>parts.join('\n')),['',''],['','']],leftFraction:1/3,padding:{left:3,right:3,top:2,bottom:2},keepWithNext:false});
-    }else blocks.push(...paragraph('','body',item,true),...paragraph('','body',item,false));
+    }else {
+      const maxLines=settings.sectionStyles?.find(rule=>rule.item===item)?.maxLines;
+      if(maxLines!==1)blocks.push(...paragraph('','body',item,true));
+      blocks.push(...paragraph('','body',item,false));
+    }
     if(columnCount>1)columnGroups.push(blocks);else group(blocks);
   }
   if(columnGroups.length){
@@ -127,6 +131,47 @@ export function buildDocumentPlan(settings, title=null) {
     }
     balancedColumns(columnGroups);
   }
+  // Fit editable writing lines into the existing page and column breaks.
+  // A full-width introduction shifts both columns below it by the same amount.
+  for(const sheet of pages.filter(sheet=>sheet.kind==='body')){
+    const tracks=[];
+    for(const block of sheet.blocks){
+      if(!tracks.length||block.columnStart||block.columnBreak)tracks.push([]);
+      tracks.at(-1).push(block);
+    }
+    const finalBottom=Math.max(...sheet.blocks.map(block=>block.y+block.height));
+    const reserve=documentLineHeight(bodySize,spacing)*2;
+    let introductionGrowth=0;
+    sheet.blocks=tracks.flatMap((track,index)=>{
+      const introduction=index===0&&track[0].columnCount===1&&tracks.length>1;
+      const last=track.at(-1);
+      let available=Math.max(0,bottom-reserve-introductionGrowth-(introduction?finalBottom:last.y+last.height));
+      if(introduction)available=Math.min(available,(bottom-bodyTop)*0.1);
+      const writingEnds=track.filter(block=>block.role==='body'&&block.type==='paragraph'&&!block.text&&!block.keepWithNext);
+      const perItem=available/Math.max(1,writingEnds.length);
+      let growth=0;
+      const expanded=track.flatMap((block,blockIndex)=>{
+        block.y+=introductionGrowth+growth;
+        const next=track[blockIndex+1];
+        const titleGap=block.role==='title'&&next&&next.role!=='title';
+        if(!titleGap&&!writingEnds.includes(block))return [block];
+        const line=titleGap?paragraph('')[0]:block;
+        const maxLines=settings.sectionStyles?.find(rule=>rule.item===block.item)?.maxLines ?? Infinity;
+        const limit=titleGap?1:Math.max(0,Math.min(6,maxLines-2));
+        const extra=line.height>0?Math.min(limit,Math.floor(Math.min(available,titleGap?available:perItem)/line.height)):0;
+        const added=Array.from({length:extra},(_,i)=>({
+          ...block,...line,y:block.y+block.height+i*line.height,
+          pageBreak:false,columnBreak:false,columnStart:false,keepWithNext:titleGap&&block.keepWithNext,
+        }));
+        growth+=extra*line.height;
+        available-=extra*line.height;
+        return [block,...added];
+      });
+      if(introduction)introductionGrowth=growth;
+      return expanded;
+    });
+  }
+  paragraphs.splice(0,paragraphs.length,...pages.flatMap(sheet=>sheet.blocks));
   return {version:DOCUMENT_LAYOUT_VERSION,title:safeTitle,widthMm,heightMm,widthPt,heightPt,margins,bodyTop,bodyBottom:bottom,bodySize,fontFamily:settings.fontFamily||'함초롬바탕',lineSpacing:spacing,gapPt:gap,pages,paragraphs,warnings:[...new Set(warnings)]};
 }
 

@@ -233,11 +233,17 @@ test('publication requirements produce side-by-side body items on one page with 
  assert.equal(headings[0].columnCount,1,'Abstract stays above the body columns');
  assert.deepEqual(headings.slice(1).map(b=>[b.item,b.column]),[['서론',0],['본론',0],['결론',1],['참고문헌',1]]);
  assert.equal(headings[1].y,headings[3].y,'Both columns start at the same height');
+ assert(headings[0].y>plan.paragraphs[0].y+plan.paragraphs[0].height,'Title has breathing room');
+ assert(plan.paragraphs.filter(b=>b.item==='본론'&&b.role==='body').length>2,'Body has editable writing space');
+ assert(plan.paragraphs.every(b=>b.y+b.height<=plan.bodyBottom+0.01));
  assert(Math.abs(headings[3].x-headings[1].x-headings[1].width-mmToHwpUnit(7.04)/100)<0.001);
  const {section}=await readDocument(result.buffer),paras=findElement(section,'sec').children.filter(n=>n['hp:p']);
  const rightStart=plan.paragraphs.findIndex(b=>b.item==='결론');assert.equal(paras[rightStart][':@']['@_columnBreak'],'1');
  assert.equal(paras[rightStart][':@']['@_pageBreak'],'0','The right-hand column belongs to the same page');
  for(const item of payload.settings.requiredItems){const blocks=plan.paragraphs.filter(b=>b.item===item);assert.equal(new Set(blocks.map(b=>b.page+':'+b.column)).size,1,'Writing areas stay with their heading');}
+ payload.settings.sectionStyles[0].maxLines=1;
+ const limited=await generateHwpx(payload);
+ assert.equal(limited.renderPlan.paragraphs.filter(b=>b.item==='Abstract'&&b.role==='body').length,1);
 });
 
 test('balanced multi-column forms preserve order and stay inside the page for unequal tables and additional pages',async()=>{

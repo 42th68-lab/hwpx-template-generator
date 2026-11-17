@@ -26,7 +26,7 @@ export function normalizeGenerationInput(input) {
   settings.lineSpacing = { value: typeof raw.lineSpacing?.value === "number" ? raw.lineSpacing.value : null, unit: typeof raw.lineSpacing?.unit === "string" ? raw.lineSpacing.unit : null };
   settings.requiredItems = Array.isArray(raw.requiredItems) ? raw.requiredItems.map((item) => typeof item === "string" ? item.trim() : item) : [];
   settings.documentOptions = raw.documentOptions == null ? {coverPage:false,contentsPage:false,tableItems:[]} : raw.documentOptions;
-  for (const group of ['headerFooterMm','columns','alignment','limits','sectionStyles','typography']) if (raw[group] != null) settings[group] = raw[group];
+  for (const group of ['headerFooterMm','columns','alignment','limits','sectionStyles','typography','figures']) if (raw[group] != null) settings[group] = raw[group];
   if(raw.documentTitle!=null)settings.documentTitle=raw.documentTitle;
   const problems = validateSettings(settings);
   if (problems.length) throw new GenerationError(problems[0].message);
@@ -35,7 +35,7 @@ export function normalizeGenerationInput(input) {
   // Online saves send the library name as the API title, including for copies.
   const title = settings.documentTitle==="" ? "" : (input.title ?? settings.documentTitle ?? "");
   if (typeof title !== "string" || title.trim().length > 80 || /[\r\n]/.test(title)) throw new GenerationError("문서 제목은 한 줄, 80자 이내로 입력해 주세요.");
-  if (![title, settings.fontFamily, ...settings.requiredItems, ...(settings.sectionStyles || []).map(s=>s.item)].every(isXmlText)) throw new GenerationError("제목 또는 필수 항목에 문서에 넣을 수 없는 제어 문자가 있습니다.");
+  if (![title, settings.fontFamily, ...settings.requiredItems, ...(settings.sectionStyles || []).map(s=>s.item),...(settings.figures ?? []).map(figure=>figure.caption)].every(isXmlText)) throw new GenerationError("제목·필수 항목 또는 캡션에 문서에 넣을 수 없는 제어 문자가 있습니다.");
   if(settings.documentTitle!=null)settings.documentTitle=title.trim();
   return { settings, title: title.trim() };
 }
@@ -129,7 +129,7 @@ export async function generateHwpx(input, { stage = "layout" } = {}) {
     const options=settings.documentOptions;
     const generated = [];
     let gridBorder;
-    if(options.tableItems.length){
+    if(options.tableItems.length||settings.figures?.length){
       const fills=findElement(header,'borderFills');const fill=clone(findElement(header,'borderFill','2').node);
       gridBorder=String(Math.max(...[...elements(fills.children)].filter(e=>e.localName==='borderFill').map(e=>Number(e.attributes['@_id'])))+1);
       fill[':@']['@_id']=gridBorder;
@@ -138,13 +138,13 @@ export async function generateHwpx(input, { stage = "layout" } = {}) {
     }
     const element=(name,attributes={},children=[])=>({[name]:children,':@':Object.fromEntries(Object.entries(attributes).map(([key,value])=>['@_'+key,String(value)]))});
     const table=(block)=>{
-      const width=Math.round(block.width*100),left=Math.round(width*block.leftFraction),rowHeight=Math.round(block.rowHeight*100);
+      const width=Math.round(block.width*100),left=block.rows[0].length===1?width:Math.round(width*block.leftFraction),rowHeight=Math.round(block.rowHeight*100);
       const rows=[];
-      for(let row=0;row<3;row++){const cells=[];for(let col=0;col<2;col++){const text=block.rows[row][col];cells.push(element('hp:tc',{name:'',header:row===0?1:0,hasMargin:1,protect:0,editable:0,dirty:1,borderFillIDRef:gridBorder},[
+      for(let row=0;row<block.rows.length;row++){const cells=[];for(let col=0;col<block.rows[row].length;col++){const text=block.rows[row][col];cells.push(element('hp:tc',{name:'',header:row===0&&block.role!=='figure'?1:0,hasMargin:1,protect:0,editable:0,dirty:1,borderFillIDRef:gridBorder},[
         element('hp:subList',{id:'',textDirection:'HORIZONTAL',lineWrap:'BREAK',vertAlign:'CENTER',linkListIDRef:0,linkListNextIDRef:0,textWidth:0,textHeight:0,hasTextRef:0,hasNumRef:0},text.split('\n').map(line=>paragraphFrom(bodyTemplate,next(),line))),
         element('hp:cellAddr',{colAddr:col,rowAddr:row}),element('hp:cellSpan',{colSpan:1,rowSpan:1}),element('hp:cellSz',{width:col===0?left:width-left,height:rowHeight}),element('hp:cellMargin',{left:300,right:300,top:200,bottom:200})]));}rows.push(element('hp:tr',{},cells));}
-      const tbl=element('hp:tbl',{id:next(),zOrder:0,numberingType:'TABLE',textWrap:'TOP_AND_BOTTOM',textFlow:'BOTH_SIDES',lock:0,dropcapstyle:'None',pageBreak:'CELL',repeatHeader:1,rowCnt:3,colCnt:2,cellSpacing:0,borderFillIDRef:gridBorder,noAdjust:0},[
-        element('hp:sz',{width,widthRelTo:'ABSOLUTE',height:rowHeight*3,heightRelTo:'ABSOLUTE',protect:0}),
+      const tbl=element('hp:tbl',{id:next(),zOrder:0,numberingType:'TABLE',textWrap:'TOP_AND_BOTTOM',textFlow:'BOTH_SIDES',lock:0,dropcapstyle:'None',pageBreak:'CELL',repeatHeader:block.role==='figure'?0:1,rowCnt:block.rows.length,colCnt:block.rows[0].length,cellSpacing:0,borderFillIDRef:gridBorder,noAdjust:0},[
+        element('hp:sz',{width,widthRelTo:'ABSOLUTE',height:rowHeight*block.rows.length,heightRelTo:'ABSOLUTE',protect:0}),
         element('hp:pos',{treatAsChar:1,affectLSpacing:1,flowWithText:1,allowOverlap:0,holdAnchorAndSO:0,vertRelTo:'PARA',horzRelTo:'COLUMN',vertAlign:'TOP',horzAlign:'LEFT',vertOffset:0,horzOffset:0}),
         element('hp:outMargin',{left:0,right:0,top:0,bottom:0}),element('hp:inMargin',{left:0,right:0,top:0,bottom:0}),...rows]);
       return element('hp:p',{id:next(),paraPrIDRef:0,styleIDRef:0,pageBreak:0,columnBreak:0,merged:0},[element('hp:run',{charPrIDRef:0},[tbl,element('hp:t')])]);

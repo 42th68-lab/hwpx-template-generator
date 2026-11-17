@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { generateHwpx, mmToHwpUnit, normalizeGenerationInput } from "../hwpx-generator.mjs";
 import { elements, findElement, validateHwpx, xmlParser } from "../hwpx-validation.mjs";
-import { buildDocumentPlan, DOCUMENT_LAYOUT_VERSION } from "../settings-model.js";
+import { buildDocumentPlan, DOCUMENT_LAYOUT_VERSION, reconcileItemReferences } from "../settings-model.js";
 import { createAppServer } from "../server.mjs";
 
 const input = () => ({ confirmed: true, title: "탐구 보고서", settings: {
@@ -20,6 +20,53 @@ const readDocument = async (buffer) => {
   const texts = [...elements(section)].filter((element) => element.localName === "t").map((element) => element.children.map((part) => part["#text"] ?? "").join(""));
   return { zip, section, header, texts };
 };
+
+test('editable figure spaces and captions match the plan, survive reorder and renumber after deletion',async()=>{
+  const payload=input();payload.settings.requiredItems=['방법','결과'];
+  payload.settings.figures=[
+    {item:'결과',kind:'graph',caption:'측정값 <비교> & 분석',heightMm:45},
+    {item:'방법',kind:'figure',caption:'실험 장치',heightMm:35},
+    {item:'방법',kind:'graph',caption:'시간 변화',heightMm:25},
+  ];
+  for(const columns of [1,2]){
+    payload.settings.columns={count:columns,gapMm:7};
+    const result=await generateHwpx(payload),plan=result.renderPlan;
+    const {section,texts}=await readDocument(result.buffer);
+    assert.deepEqual(plan.paragraphs.filter(b=>b.role==='caption').map(b=>b.text),['그림 1. 실험 장치','그림 2. 시간 변화','그림 3. 측정값 <비교> & 분석']);
+    for(const caption of plan.paragraphs.filter(b=>b.role==='caption'))assert(texts.includes(caption.text));
+    const tables=[...elements(section)].filter(e=>e.localName==='tbl');
+    assert.equal(tables.length,3);
+    const spaces=plan.paragraphs.filter(b=>b.role==='figure');
+    for(const [index,table] of tables.entries()){
+      assert.equal(table.attributes['@_rowCnt'],'1');assert.equal(table.attributes['@_colCnt'],'1');assert.equal(table.attributes['@_lock'],'0');
+      assert.equal(findElement(table.children,'sz').attributes['@_height'],String(Math.round(spaces[index].height*100)));
+      assert.equal(findElement(table.children,'tc').attributes['@_protect'],'0');
+    }
+    for(const [index,block] of plan.paragraphs.entries()){
+      assert(block.y+block.height<=plan.bodyBottom+0.01);
+      if(block.role==='figure'){const caption=plan.paragraphs[index+1];assert.equal(caption.role,'caption');assert.equal(caption.page,block.page);assert.equal(caption.column,block.column);assert(block.keepWithNext);}
+    }
+    assert(result.validation.passed);
+  }
+  payload.settings.requiredItems.reverse();
+  let result=await generateHwpx(payload);
+  assert.equal(result.renderPlan.paragraphs.find(b=>b.role==='caption').text,'그림 1. 측정값 <비교> & 분석');
+  payload.settings.requiredItems=['방법'];reconcileItemReferences(payload.settings);
+  assert.equal(payload.settings.figures.length,2);
+  result=await generateHwpx(payload);
+  assert.deepEqual(result.renderPlan.paragraphs.filter(b=>b.role==='caption').map(b=>b.text),['그림 1. 실험 장치','그림 2. 시간 변화']);
+});
+
+test('multiple figure groups paginate together with their captions and invalid figure settings fail clearly',async()=>{
+ const payload=input();payload.settings.requiredItems=['결과'];
+ payload.settings.figures=Array.from({length:8},(_,index)=>({item:'결과',kind:'figure',caption:'결과 '+index,heightMm:60}));
+ const result=await generateHwpx(payload);
+ assert(result.renderPlan.pages.length>1);assert.deepEqual(result.renderPlan.warnings,[]);
+ for(const [index,block] of result.renderPlan.paragraphs.entries())if(block.role==='figure'){const caption=result.renderPlan.paragraphs[index+1];assert.equal(caption.page,block.page);}
+ for(const bad of [42,[null],[{item:'없는 항목',kind:'figure',caption:'제목',heightMm:45}],[{item:'결과',kind:'figure',caption:'제목',heightMm:0}],[{item:'결과',kind:'figure',caption:'제목\n둘째 줄',heightMm:45}]]){
+   payload.settings.figures=bad;await assert.rejects(()=>generateHwpx(payload),/그림·그래프/);
+ }
+});
 
 test("an untitled form keeps an editable blank title and a usable filename", async () => {
   for (const [title, documentTitle] of [[undefined, undefined], ["", "이전 제목"], ["문서 양식", ""]]) {

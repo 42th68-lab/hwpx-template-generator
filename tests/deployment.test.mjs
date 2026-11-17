@@ -119,6 +119,7 @@ test('requirements -> analysis API -> HWPX API -> preview renderer keeps the rig
  data.set('requirements','A4 세로, 모든 여백 20mm, 글꼴 바탕체, 본문 10pt, 줄 간격 160%. 구성: Abstract → 서론 → 본론 → 결론 → 참고문헌\n본문 배치: 2단, 단 간격 7.04mm');
  const analysis=await (await handler(new Request('https://test.invalid/api/analyze',{method:'POST',body:data}))).json();
  const settings=analysis.analysis.settings;assert.equal(settings.columns.count,2);
+ settings.figures=[{item:'서론',kind:'figure',caption:'탐구 장치',heightMm:35},{item:'결론',kind:'graph',caption:'결과 비교',heightMm:35}];
  const response=await handler(new Request('https://test.invalid/api/hwpx',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({settings,title:'연구 보고서',confirmed:true})}));assert.equal(response.status,200);
  const result=await response.json();assert.equal(result.renderPlan.pages.length,1);assert((await validateHwpx(Buffer.from(result.fileBase64,'base64'))).passed);
  // Exercise the real DOM writer without browser automation: inspect its output
@@ -130,6 +131,9 @@ test('requirements -> analysis API -> HWPX API -> preview renderer keeps the rig
  const left=nodes.find(n=>n.textContent==='2. 서론'),right=nodes.find(n=>n.textContent==='4. 결론');
  assert(left&&right);assert.notEqual(left.style.left,right.style.left);assert.equal(left.style.top,right.style.top);
  assert(sheets[0].children.includes(left)&&sheets[0].children.includes(right));assert(nodes.some(n=>n.textContent==='생성 파일 기준'));
+ const figures=nodes.filter(n=>n.tag==='table'&&n.dataset.role==='figure');assert.equal(figures.length,2);
+ for(const table of figures){assert.equal(table.children[0].children.length,1);assert.equal(table.children[1].children[0].children.length,1);}
+ assert(nodes.some(n=>n.textContent==='그림 1. 탐구 장치'));assert(nodes.some(n=>n.textContent==='그림 2. 결과 비교'));
 });
 
 

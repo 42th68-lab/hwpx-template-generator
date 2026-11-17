@@ -82,6 +82,58 @@ const sectionControls=document.createElement('div');sectionControls.id='section-
 const limitNote=document.createElement('p');limitNote.className='config-note';limitNote.textContent='미지정인 추가 서식은 기본 템플릿을 따릅니다. 본문 다단은 초록·요약 뒤부터 적용하며 시작 항목을 직접 지정할 수 있습니다. 쪽수와 줄 수 조건은 양식·설정에 보관합니다. 빈 양식에서 작성 후 분량을 보장할 수 없으므로 최종 분량은 내용을 작성한 뒤 한글에서 확인하세요.';advanced.append(limitNote);
 const advancedDetails=document.createElement('details');advancedDetails.id='advanced-options';advancedDetails.className='settings-disclosure';const advancedSummary=document.createElement('summary');advancedSummary.textContent='배치·정렬·분량';advancedDetails.append(advancedSummary,advanced);
 settingsForm.insertBefore(advancedDetails,document.querySelector('#setting-items').closest('fieldset').nextSibling);
+const figureSettings=document.createElement('fieldset');figureSettings.id='figure-settings';
+const figureLegend=document.createElement('legend');figureLegend.textContent='그림·그래프 작성 공간';
+const figureNote=document.createElement('p');figureNote.className='config-note';figureNote.textContent='항목별로 빈 공간과 캡션을 추가하세요. 그림·그래프 모두 ‘그림 1.’부터 문서 순서대로 번호를 매깁니다. 한글에서는 빈 표 안에 그림을 넣고 캡션을 수정할 수 있습니다.';
+const figureControls=document.createElement('div');figureControls.id='figure-controls';
+figureSettings.append(figureLegend,figureNote,figureControls);advancedDetails.before(figureSettings);
+function renderFigureControls(){
+  figureControls.replaceChildren();let number=0;
+  for(const [itemIndex,item] of settings.requiredItems.entries()){
+    const section=document.createElement('div');section.className='figure-item';
+    const heading=document.createElement('h4');heading.textContent=item;
+    const order=document.createElement('div');order.className='library-toolbar';order.append(heading);
+    for(const [direction,text] of [[-1,'위로'],[1,'아래로']]){
+      const move=document.createElement('button');move.type='button';move.className='text-button';move.textContent=text;move.setAttribute('aria-label',`${item} 항목 ${text}`);
+      const target=itemIndex+direction;move.disabled=target<0||target>=settings.requiredItems.length;
+      move.addEventListener('click',()=>{
+        [settings.requiredItems[itemIndex],settings.requiredItems[target]]=[settings.requiredItems[target],settings.requiredItems[itemIndex]];
+        controls.requiredItems.value=settings.requiredItems.join('\n');reviewedFields.add('requiredItems');confirmed=false;
+        renderSectionControls();renderFigureControls();refreshSettings();
+      });order.append(move);
+    }
+    section.append(order);
+    for(const [index,figure] of (settings.figures ?? []).entries()){
+      if(figure.item!==item)continue;
+      number++;
+      const row=document.createElement('div');row.className='figure-slot';
+      const label=document.createElement('strong');label.textContent=`그림 ${number} · ${figure.kind==='graph'?'그래프':'그림'} 공간`;row.append(label);
+      for(const [property,text] of [['caption','캡션 제목'],['heightMm','공간 높이 (mm)']]){
+        const wrapper=document.createElement('label');wrapper.textContent=text;
+        const control=document.createElement('input');control.type=property==='caption'?'text':'number';control.value=figure[property];
+        control.setAttribute('aria-label',`${item} 그림 ${number} ${text}`);
+        control.dataset.figureIndex=String(index);control.dataset.figureProperty=property;
+        if(property==='caption'){control.maxLength=160;control.placeholder='예: 실험 장치';}else {control.min='20';control.max='120';control.step='1';}
+        wrapper.append(control);row.append(wrapper);
+      }
+      const remove=document.createElement('button');remove.type='button';remove.className='text-button';remove.textContent='공간 삭제';remove.setAttribute('aria-label',`${item} 그림 ${number} 공간 삭제`);
+      remove.addEventListener('click',()=>{settings.figures.splice(index,1);confirmed=false;renderFigureControls();refreshSettings();});row.append(remove);section.append(row);
+    }
+    const actions=document.createElement('div');actions.className='library-toolbar';
+    for(const [kind,text] of [['figure','그림 공간 추가'],['graph','그래프 공간 추가']]){
+      const add=document.createElement('button');add.type='button';add.className='secondary-button';add.textContent=text;add.setAttribute('aria-label',`${item} ${text}`);add.disabled=(settings.figures?.length ?? 0)>=50;
+      add.addEventListener('click',()=>{settings.figures ??=[];settings.figures.push({item,kind,caption:'',heightMm:45});confirmed=false;renderFigureControls();refreshSettings();});actions.append(add);
+    }
+    section.append(actions);figureControls.append(section);
+  }
+}
+figureControls.addEventListener('input',event=>{
+  const {figureIndex,figureProperty}=event.target.dataset;
+  if(figureIndex==null||!['caption','heightMm'].includes(figureProperty))return;
+  const figure=settings.figures[Number(figureIndex)];
+  figure[figureProperty]=figureProperty==='heightMm'?(event.target.validity.badInput||event.target.value===''?NaN:Number(event.target.value)):event.target.value;
+  confirmed=false;refreshSettings();
+});
 const extras=document.querySelector('#setting-cover').closest('fieldset'),extraDetails=document.createElement('details');extraDetails.className='settings-disclosure';const extraSummary=document.createElement('summary');extraSummary.textContent='표지·목차·작성 표';extras.before(extraDetails);extraDetails.append(extraSummary,extras);
 const numberedLabel=document.createElement('label'),numberedControl=document.createElement('input');numberedControl.type='checkbox';numberedControl.id='setting-numbered';numberedControl.checked=true;numberedLabel.append(numberedControl,document.createTextNode(' 항목 번호 표시'));extras.append(numberedLabel);
 function renderSectionControls() {
@@ -161,7 +213,7 @@ function invalidateFinalCheck() {
 }
 function focusSetting(path) {
   const optionTargets={'documentOptions.coverPage':'setting-cover','documentOptions.contentsPage':'setting-contents','documentOptions.tableItems':'setting-tables','documentOptions.numberedItems':'setting-numbered'};
-  const target=controls[path] || (path==='documentTitle'?documentTitle:document.getElementById(optionTargets[path]||'')) || (path==='lineSpacing'?spacingValue:[...sectionControls.querySelectorAll('[data-setting-path]')].find(control=>control.dataset.settingPath===path));
+  const target=controls[path] || (path==='documentTitle'?documentTitle:document.getElementById(optionTargets[path]||'')) || (path==='figures'?figureControls.querySelector('input'):null) || (path==='lineSpacing'?spacingValue:[...sectionControls.querySelectorAll('[data-setting-path]')].find(control=>control.dataset.settingPath===path));
   if(target){for(let parent=target.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;target.focus();target.scrollIntoView({behavior:'smooth',block:'center'});}
   else {advancedDetails.open=true;advancedDetails.scrollIntoView({behavior:'smooth',block:'center'});}
 }
@@ -354,6 +406,7 @@ function appendResultBlock(title, details, content) {
 
 function fillSettingsControls() {
   renderSectionControls();
+  renderFigureControls();
   documentTitle.value=settings.documentTitle ?? '';
   numberedControl.checked=settings.documentOptions?.numberedItems!==false;
   for (const [path, control] of Object.entries(controls)) {
@@ -481,7 +534,7 @@ for (const [path, control] of Object.entries(controls)) {
   control.addEventListener("input", () => {
     if (!settings) return;
     readSettingsControls();
-    if(path==='requiredItems') {reconcileItemReferences(settings);document.querySelector('#setting-tables').value=settings.documentOptions?.tableItems?.join('\n')||'';renderSectionControls();}
+    if(path==='requiredItems') {reconcileItemReferences(settings);document.querySelector('#setting-tables').value=settings.documentOptions?.tableItems?.join('\n')||'';renderSectionControls();renderFigureControls();}
     reviewedFields.add(path);
     confirmed = false;
     refreshSettings();

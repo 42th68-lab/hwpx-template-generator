@@ -4,7 +4,7 @@ export const PAPER_SIZES = {
   B4: [250, 353], B5: [176, 250], LETTER: [215.9, 279.4], LEGAL: [215.9, 355.6],
 };
 
-export const DOCUMENT_LAYOUT_VERSION = 5;
+export const DOCUMENT_LAYOUT_VERSION = 6;
 export const UNTITLED_FORM_NAME = '문서 양식';
 
 export const SCHOOL_TEMPLATES = [
@@ -134,6 +134,7 @@ export function buildDocumentPlan(settings, title=null) {
   newPage('body',count>1&&!startItem?count:1);
   const columnGroups=[],mainTitle=paragraph(safeTitle,'title');
   if(columnCount>1)columnGroups.push(mainTitle);else group(mainTitle);
+  let figureNumber=0;
   for(const [index,item] of items.entries()){
     if(item===startItem&&count>1)useColumns(count);
     const blocks=paragraph(label(item,index),'heading',item,true);
@@ -149,7 +150,17 @@ export function buildDocumentPlan(settings, title=null) {
       if(maxLines!==1)blocks.push(...paragraph('','body',item,true));
       blocks.push(...paragraph('','body',item,false));
     }
-    if(columnCount>1)columnGroups.push(blocks);else group(blocks);
+    const itemGroups=[blocks];
+    for(const [figureIndex,figure] of (settings.figures ?? []).filter(figure=>figure.item===item).entries()){
+      figureNumber++;
+      const figureBlocks=figureIndex===0?blocks:[];
+      if(figureIndex===0)blocks.at(-1).keepWithNext=true;
+      const height=hwpMm(Number.isFinite(figure.heightMm)?figure.heightMm:45);
+      figureBlocks.push({type:'table',role:'figure',item,kind:figure.kind,figureNumber,fontSizePt:bodySize,bold:false,alignment:'left',height,rowHeight:height,cellLineHeight:documentLineHeight(bodySize,spacing),rows:[['']],padding:{left:3,right:3,top:2,bottom:2},keepWithNext:true});
+      figureBlocks.push(...paragraph(`그림 ${figureNumber}. ${figure.caption}`.trimEnd(),'caption',item).map(block=>({...block,alignment:'center',figureNumber})));
+      if(figureIndex>0)itemGroups.push(figureBlocks);
+    }
+    for(const blocks of itemGroups){if(columnCount>1)columnGroups.push(blocks);else group(blocks);}
   }
   if(columnGroups.length){
     if(columnGroups[0][0].role==='title' && columnGroups.length>1){
@@ -233,6 +244,7 @@ export function optionalSettings(raw) {
     if (raw[group] != null) result[group] = Object.fromEntries(keys.map(key => [key, raw[group][key] ?? null]));
   }
   if (raw.sectionStyles != null) result.sectionStyles = raw.sectionStyles.map(style => ({item:style.item,alignment:style.alignment ?? null,maxLines:style.maxLines ?? null,fontSizePt:style.fontSizePt ?? null}));
+  if(raw.figures!=null)result.figures=raw.figures.map(figure=>({item:figure.item,kind:figure.kind,caption:figure.caption,heightMm:figure.heightMm}));
   if(raw.documentTitle!=null)result.documentTitle=raw.documentTitle;
   return result;
 }
@@ -251,6 +263,7 @@ export function emptySettings() {
 export function reconcileItemReferences(settings) {
   const items=new Set(settings.requiredItems);
   if(settings.sectionStyles)settings.sectionStyles=settings.sectionStyles.filter(style=>items.has(style.item));
+  if(settings.figures)settings.figures=settings.figures.filter(figure=>items.has(figure.item));
   if(settings.columns?.startItem && !items.has(settings.columns.startItem))settings.columns.startItem=null;
   if(settings.documentOptions?.tableItems)settings.documentOptions.tableItems=settings.documentOptions.tableItems.filter(item=>items.has(item));
   return settings;
@@ -341,6 +354,15 @@ export function validateSettings(settings) {
     warn("invalid", "requiredItems", "필수 항목은 최대 50개, 항목당 100자 이내로 입력해 주세요.");
   }
   const options=settings.documentOptions;
+  if(settings.figures!=null){
+    const figures=settings.figures;
+    if(!Array.isArray(figures)||figures.length>50)warn('invalid','figures','그림·그래프 작성 공간은 문서당 최대 50개입니다.');
+    else for(const figure of figures){
+      if(!figure||typeof figure!=='object'||!Array.isArray(settings.requiredItems)||!settings.requiredItems.includes(figure.item)||!['figure','graph'].includes(figure.kind)||typeof figure.caption!=='string'||figure.caption.length>160||/[\x00-\x1f]/.test(figure.caption)||typeof figure.heightMm!=='number'||!Number.isFinite(figure.heightMm)||figure.heightMm<20||figure.heightMm>120){
+        warn('invalid','figures','그림·그래프의 항목·종류·캡션(한 줄, 160자 이내)과 높이(20~120mm)를 확인해 주세요.');break;
+      }
+    }
+  }
   if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !(Array.isArray(settings.requiredItems)&&settings.requiredItems.includes(item))) || (options.numberedItems!=null&&typeof options.numberedItems!=='boolean'))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');
   for (const [group, keys] of Object.entries({headerFooterMm:['header','footer'],columns:['count','gapMm','scope','startItem'],alignment:['title','body','heading'],typography:['titleSizePt','headingSizePt'],limits:['maxPages','titleMaxLines']})) {
     if (settings[group] != null && (typeof settings[group] !== 'object' || Array.isArray(settings[group]))) { warn('invalid',group,`${group}: 설정 형식이 잘못되었습니다.`); continue; }

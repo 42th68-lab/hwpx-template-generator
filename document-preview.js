@@ -64,14 +64,15 @@ export function renderDocumentPreview(container, settings, title, { confirmed = 
       Object.assign(node.style,{left:scale(block.x),top:scale(block.y),width:scale(block.width),height:scale(block.height),fontSize:scale(block.fontSizePt),fontWeight:block.bold?'700':'400',lineHeight:scale(block.height),textAlign:block.alignment==='distribute'?'justify':block.alignment});
       if(block.type==='table'){
         node.style.lineHeight=scale(block.cellLineHeight);
-        const columns=element('colgroup'),left=element('col'),right=element('col');
-        left.style.width=`${block.leftFraction*100}%`;right.style.width=`${(1-block.leftFraction)*100}%`;columns.append(left,right);node.append(columns);
+        const columns=element('colgroup');
+        const fractions=block.rows[0].length===1?[1]:[block.leftFraction,1-block.leftFraction];
+        for(const fraction of fractions){const col=element('col');col.style.width=`${fraction*100}%`;columns.append(col);}node.append(columns);
         const body=element('tbody');
         for(const row of block.rows){const tr=element('tr');tr.style.height=scale(block.rowHeight);
           for(const text of row){const td=element('td',text||'\u00a0');td.style.whiteSpace='pre';td.style.padding=[block.padding.top,block.padding.right,block.padding.bottom,block.padding.left].map(scale).join(' ');tr.append(td);}
           body.append(tr);
         }
-        node.append(body);node.setAttribute('aria-label',`${block.item} 작성 표`);
+        node.append(body);node.setAttribute('aria-label',block.role==='figure'?`${block.item} ${block.kind==='graph'?'그래프':'그림'} 작성 공간 ${block.figureNumber}`:`${block.item} 작성 표`);
       }
       sheet.append(node);
     }

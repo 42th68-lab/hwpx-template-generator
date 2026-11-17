@@ -816,6 +816,12 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline:3px solid
 
 /* Page geometry comes from the same layout plan as the HWPX writer. */
 .school-templates { margin:0 0 24px; }
+.figure-item { padding:14px 0; border-top:1px solid var(--line); }
+.figure-item h4 { margin:0 0 10px; font-size:13px; }
+.figure-slot { display:grid; gap:10px; padding:12px; margin:10px 0; background:#f5f6f8; border:1px solid var(--line); border-radius:8px; }
+.figure-slot strong { font-size:13px; }
+.figure-slot input { width:100%; box-sizing:border-box; }
+.figure-slot .text-button { justify-self:start; }
 .school-templates h3 { margin:0 0 8px; font-size:15px; }
 .school-templates p { margin:0 0 14px; font-size:13px; color:var(--muted); line-height:1.7; }
 .school-template-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }

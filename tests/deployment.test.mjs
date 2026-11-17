@@ -160,3 +160,13 @@ test('editing each document option resolves its own pending conflict',async()=>{
  runInNewContext(block,context);for(const id of ['setting-cover','setting-contents','setting-tables','setting-numbered'])events.get(id)();
  assert.equal(context.confirmed,false);assert.equal(refreshes,4);assert.deepEqual([...reviewedFields].sort(),['documentOptions.contentsPage','documentOptions.coverPage','documentOptions.numberedItems','documentOptions.tableItems']);
 });
+
+test('editing the title clears confirmation and invalidates the previous file',async()=>{
+ const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
+ const block=source.match(/documentTitle\.addEventListener\("input",[\s\S]+?refreshSettings\(\); \}\);/)[0];
+ let input,cleared=false,refreshed=false;
+ const context={documentTitle:{value:'새 제목',addEventListener(event,callback){input=callback;}},settings:{},reviewedFields:new Set(),settingsJson:{},confirmed:true,clearHwpx(){cleared=true;},refreshSettings(){refreshed=true;}};
+ runInNewContext(block,context);input();
+ assert.equal(context.confirmed,false);assert.equal(context.settings.documentTitle,'새 제목');
+ assert(cleared&&refreshed);
+});

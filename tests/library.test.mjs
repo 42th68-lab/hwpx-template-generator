@@ -2,11 +2,89 @@ import {checkedCloudState} from '../library-ui.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
-import {cleanDocument,backupDocument} from '../template-store.js';
+import {cleanDocument,backupDocument,saveForm,getForm,allForms,importBackup,attachGeneratedFile,setCloud} from '../template-store.js';
+import {schoolTemplateSettings,SCHOOL_TEMPLATES,reconcileItemReferences,savedDocumentTitle,DOCUMENT_LAYOUT_VERSION} from '../settings-model.js';
 import {generateHwpx} from '../hwpx-generator.mjs';
 import {elements,findElement,xmlParser} from '../hwpx-validation.mjs';
 import {createLibraryHandler} from '../supabase/functions/guest-library/handler.mjs';
 const document=()=>({title:'기능 검사',requirements:'공개하지 않을 개인 입력',settings:{schemaVersion:1,paper:{size:'A4',orientation:'portrait'},marginsMm:{top:20,bottom:20,left:20,right:20},fontFamily:'맑은 고딕',fontSizePt:12,lineSpacing:{value:180,unit:'percent'},requiredItems:['목적','방법','결과'],documentOptions:{coverPage:true,contentsPage:true,tableItems:['방법']}}});
+
+// Exercise the persistence code with asynchronous IDB requests and cloned records.
+// Real IndexedDB and the controls are checked separately in the browser.
+const memoryRows=new Map();
+globalThis.indexedDB={open(){
+ const request={};
+ const db={createObjectStore(){},transaction(){
+   let pending=0,finished=false;
+   const transaction={abort(){if(finished)return;finished=true;queueMicrotask(()=>transaction.onabort?.());},objectStore(){return store;}};
+   const enqueue=action=>{
+     pending++;const result={};
+     queueMicrotask(()=>{
+       if(finished)return;
+       try {result.result=structuredClone(action());result.onsuccess?.();}
+       catch {transaction.abort();}
+       pending--;queueMicrotask(()=>{if(!pending&&!finished){finished=true;transaction.oncomplete?.();}});
+     });
+     return result;
+   };
+   const store={
+     get:id=>enqueue(()=>memoryRows.get(id)),
+     getAll:()=>enqueue(()=>[...memoryRows.values()]),
+     put:value=>enqueue(()=>{memoryRows.set(value.id,structuredClone(value));return value.id;}),
+     delete:id=>enqueue(()=>memoryRows.delete(id)),
+   };
+   return transaction;
+ }};
+ queueMicrotask(()=>{request.result=db;request.onupgradeneeded?.();request.onsuccess?.();});
+ return request;
+}};
+
+test('each school template retains ordered figures through save, load, copy and JSON backup/import',async()=>{
+ memoryRows.clear();
+ for(const template of SCHOOL_TEMPLATES){
+   const settings=schoolTemplateSettings(template.id),[first,second]=settings.requiredItems;
+   settings.figures=[{item:first,kind:'figure',caption:'장치',heightMm:35},{item:second,kind:'graph',caption:'측정값',heightMm:40}];
+   settings.requiredItems.reverse();settings.fontSizePt=12;
+   const original=await saveForm({title:template.name,requirements:'',settings});
+   assert.deepEqual((await getForm(original.id)).settings.figures,settings.figures);
+   const copy=await saveForm({...original,id:undefined,title:original.title+' 복사본',settings:{...original.settings,documentTitle:savedDocumentTitle(original)}});
+   assert.notEqual(copy.id,original.id);assert.equal(copy.cloud,null);
+   const backup=JSON.parse(JSON.stringify(backupDocument([copy])));
+   assert.equal(await importBackup(backup),1);
+   const restored=(await allForms()).find(item=>item.id!==copy.id&&item.id!==original.id&&item.title===copy.title);
+   assert.deepEqual(restored.settings.figures,settings.figures);
+   assert.deepEqual(restored.settings.requiredItems,settings.requiredItems);assert.equal(restored.file,null);
+   const generated=await generateHwpx({settings:restored.settings,title:savedDocumentTitle(restored),confirmed:true});
+   assert.equal(generated.renderPlan.title,template.name);
+   assert.deepEqual(generated.renderPlan.paragraphs.filter(b=>b.role==='caption').map(b=>b.text),['그림 1. 측정값','그림 2. 장치']);
+   restored.settings.requiredItems=restored.settings.requiredItems.filter(item=>item!==second);reconcileItemReferences(restored.settings);
+   const updated=await saveForm(restored);assert.equal(updated.settings.figures.length,1);
+   assert.deepEqual((await getForm(original.id)).settings,original.settings,'Editing a copy cannot change its source');
+ }
+});
+
+test('regenerated downloads preserve newer settings and current cloud metadata atomically',async()=>{
+ const original=await saveForm(document());
+ const next={...original,settings:structuredClone(original.settings)};
+ next.settings.fontSizePt=13;await saveForm(next);
+ const file={file:new Blob(['test HWPX']),fileName:'test.hwpx',fileLayoutVersion:DOCUMENT_LAYOUT_VERSION};
+ await assert.rejects(()=>attachGeneratedFile(original,file),/변경/);
+ assert.equal((await getForm(original.id)).settings.fontSizePt,13);
+ const current=await getForm(original.id);await setCloud(current.id,{id:'cloud-test',version:2});
+ const attached=await attachGeneratedFile(current,file);
+ assert.equal(attached.cloud.version,2);assert.equal(attached.updatedAt,current.updatedAt);
+ assert.equal(attached.file.size,file.file.size);
+});
+
+test('legacy schema-one backups without figure or title options still load and regenerate',async()=>{
+ const old=document();delete old.settings.documentOptions;
+ await importBackup({format:'hanform-backup',version:1,forms:[old]});
+ const restored=(await allForms()).find(item=>item.title===old.title&&item.settings.documentOptions==null);
+ assert.equal(restored.settings.figures,undefined);
+ const generated=await generateHwpx({settings:restored.settings,title:savedDocumentTitle(restored),confirmed:true});
+ assert(generated.validation.passed);assert(!generated.renderPlan.paragraphs.some(b=>b.role==='figure'));
+ assert.throws(()=>cleanDocument({...old,settings:null}),/문서 설정/);
+});
 test('cover, generated contents list and writing table preserve unique IDs and correct table geometry',async()=>{
  const doc=document();const result=await generateHwpx({...doc,confirmed:true});const zip=await JSZip.loadAsync(result.buffer);const section=xmlParser.parse(await zip.file('Contents/section0.xml').async('string'));
  const paragraphs=[...elements(section)].filter(e=>e.localName==='p');assert.equal(new Set(paragraphs.map(e=>e.attributes['@_id'])).size,paragraphs.length);
@@ -40,6 +118,7 @@ test('sharing handler rejects missing credentials, oversized payloads and malfor
 
 test('cloud save canonicalizes advanced settings through generated output without dropping them',async()=>{
  const doc=document();doc.settings.documentOptions.numberedItems=false;Object.assign(doc.settings,{documentTitle:doc.title,typography:{titleSizePt:17,headingSizePt:12},columns:{count:2,gapMm:7.04,scope:'body'},headerFooterMm:{header:20,footer:10},alignment:{title:'left',body:'justify'},limits:{maxPages:2,titleMaxLines:2},sectionStyles:[{item:'목적',alignment:'right',maxLines:8}]});
+ const bodyTitle=doc.settings.documentTitle;doc.title+=' 복사본';
  doc.settings.figures=[{item:'결과',kind:'graph',caption:'결과 비교',heightMm:40}];
  let stored,uploaded=false;
  const handler=createLibraryHandler({env:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEYS:'{"default":"server-secret"}',SUPABASE_PUBLISHABLE_KEYS:'{"default":"public-key"}'},fetchImpl:async(url,init)=>{
@@ -50,7 +129,7 @@ test('cloud save canonicalizes advanced settings through generated output withou
   throw Error('Unexpected mock request');
  }});
  const response=await handler(new Request('https://test.invalid',{method:'POST',headers:{apikey:'public-key'},body:JSON.stringify({op:'save',payload:{...doc,storageConsent:true,publish:false,authorName:'',isAnonymous:true}})}));
- assert.equal(response.status,200);const result=await response.json();assert(uploaded);assert.equal(result.item.settings.columns.gapMm,7.04);assert.equal(stored.settings.headerFooterMm.header,20);assert.equal(stored.settings.sectionStyles[0].maxLines,8);assert.equal(stored.settings.typography.titleSizePt,17);assert.equal(stored.settings.documentTitle,doc.title);assert.equal(stored.settings.documentOptions.numberedItems,false);assert.equal(stored.is_public,false);assert.equal(stored.manage_hash.length,64);assert.notEqual(stored.manage_hash,result.token);
+ assert.equal(response.status,200);const result=await response.json();assert(uploaded);assert.equal(result.item.settings.columns.gapMm,7.04);assert.equal(stored.settings.headerFooterMm.header,20);assert.equal(stored.settings.sectionStyles[0].maxLines,8);assert.equal(stored.settings.typography.titleSizePt,17);assert.equal(stored.settings.documentTitle,bodyTitle);assert.equal(stored.title,doc.title);assert.equal(stored.settings.documentOptions.numberedItems,false);assert.equal(stored.is_public,false);assert.equal(stored.manage_hash.length,64);assert.notEqual(stored.manage_hash,result.token);
  assert.deepEqual(stored.settings.figures,doc.settings.figures);
 });
 

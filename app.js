@@ -565,7 +565,7 @@ settingsForm.addEventListener("submit", (event) => {
   refreshSettings();
 });
 
-documentTitle.addEventListener("input", () => { if(settings){settings.documentTitle=documentTitle.value.trim()||null;reviewedFields.add("documentTitle");settingsJson.textContent=JSON.stringify(settings,null,2);} clearHwpx(); refreshSettings(); });
+documentTitle.addEventListener("input", () => { if(settings){settings.documentTitle=documentTitle.value.trim()||null;reviewedFields.add("documentTitle");settingsJson.textContent=JSON.stringify(settings,null,2);confirmed=false;} clearHwpx(); refreshSettings(); });
 hwpxButton.addEventListener("click", async () => {
   if (!confirmed || stale || generatingHwpx) return;
   clearHwpx();

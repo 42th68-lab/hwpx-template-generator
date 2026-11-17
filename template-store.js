@@ -22,7 +22,7 @@ async function operate(mode, action) {
 export function cleanDocument(value) {
   if (!value || typeof value.title!=='string' || !value.title.trim() || value.title.length>80 || /[\x00-\x1f]/.test(value.title) || typeof value.requirements!=='string' || value.requirements.length>500) throw new Error('양식 이름과 입력 조건을 확인해 주세요.');
   let problems; try { problems=validateSettings(value.settings); } catch { throw new Error('문서 설정 형식이 올바르지 않습니다.'); }
-  if (value.settings.schemaVersion!==1 || problems.length) throw new Error(problems?.[0]?.message || '지원하는 문서 설정이 아닙니다.');
+  if (value.settings?.schemaVersion!==1 || problems.length) throw new Error(problems?.[0]?.message || '지원하는 문서 설정이 아닙니다.');
   const s=value.settings;
   if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test([s.fontFamily,...s.requiredItems].join(''))) throw new Error('설정에 사용할 수 없는 제어 문자가 있습니다.');
   return {title:value.title.trim(),requirements:value.requirements,settings:{schemaVersion:1,paper:{size:s.paper.size,orientation:s.paper.orientation},marginsMm:{top:s.marginsMm.top,bottom:s.marginsMm.bottom,left:s.marginsMm.left,right:s.marginsMm.right},fontFamily:s.fontFamily,fontSizePt:s.fontSizePt,lineSpacing:{value:s.lineSpacing.value,unit:s.lineSpacing.unit},requiredItems:[...s.requiredItems],...optionalSettings(s),...(s.documentOptions?{documentOptions:{coverPage:s.documentOptions.coverPage,contentsPage:s.documentOptions.contentsPage,tableItems:[...s.documentOptions.tableItems],...(s.documentOptions.numberedItems!=null?{numberedItems:s.documentOptions.numberedItems}:{})}}:{})}};
@@ -42,6 +42,23 @@ export async function saveForm(value) {
 export async function setCloud(id,cloud) {
   const item=await getForm(id); if(!item)throw new Error('저장한 양식을 찾을 수 없습니다.');
   item.cloud=cloud; await operate('readwrite',store=>store.put(item)); return item;
+}
+export async function attachGeneratedFile(source,generated) {
+  const expected=JSON.stringify(cleanDocument(source));
+  if(!(generated.file instanceof Blob)||generated.file.size>MAX_FILE||!Number.isInteger(generated.fileLayoutVersion)||typeof generated.fileName!=='string')throw new Error('생성 파일을 확인해 주세요.');
+  const db=await database();
+  return new Promise((resolve,reject)=>{
+    const transaction=db.transaction('forms','readwrite'),store=transaction.objectStore('forms'),request=store.get(source.id);
+    let result,changed=false;
+    request.onsuccess=()=>{
+      const current=request.result;
+      if(!current||JSON.stringify(cleanDocument(current))!==expected){changed=true;transaction.abort();return;}
+      result={...current,file:generated.file,fileLayoutVersion:generated.fileLayoutVersion,fileName:generated.fileName};
+      store.put(result);
+    };
+    transaction.oncomplete=()=>resolve(result);
+    transaction.onabort=transaction.onerror=()=>reject(new Error(changed?'내려받기 중 양식이 변경되었습니다. 최신 설정으로 다시 내려받아 주세요.':'생성 파일을 보관하지 못했습니다.'));
+  });
 }
 export async function importBackup(raw) {
   if(!raw || raw.format!=='hanform-backup' || raw.version!==1 || !Array.isArray(raw.forms) || raw.forms.length>200) throw new Error('한폼 양식 백업 파일이 아닙니다.');

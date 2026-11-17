@@ -73,7 +73,8 @@ export function createLibraryHandler({ env, fetchImpl = fetch }) {
         if(total>=5000)throw new Problem('공유 저장소가 가득 찼습니다. 내 양식 보관과 내려받기는 계속 이용할 수 있습니다.',429);
       }
       // Fixed trusted endpoint: callers cannot submit arbitrary files or fetch arbitrary URLs.
-      const generatedResponse = await fetchImpl('https://hanform.vercel.app/api/hwpx', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:payload.settings,title:payload.title,confirmed:true}),signal:AbortSignal.timeout(20000)});
+      const documentTitle=payload.settings?.documentTitle ?? (payload.title==='문서 양식'?'':payload.title);
+      const generatedResponse = await fetchImpl('https://hanform.vercel.app/api/hwpx', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:payload.settings,title:documentTitle,confirmed:true}),signal:AbortSignal.timeout(20000)});
       const generated = await generatedResponse.json();
       if (!generatedResponse.ok) throw new Problem(generated.error || '문서 설정이 올바르지 않습니다.');
       const applied=generated.appliedSettings;

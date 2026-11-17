@@ -66,6 +66,8 @@ test('multiple figure groups paginate together with their captions and invalid f
  for(const bad of [42,[null],[{item:'없는 항목',kind:'figure',caption:'제목',heightMm:45}],[{item:'결과',kind:'figure',caption:'제목',heightMm:0}],[{item:'결과',kind:'figure',caption:'제목\n둘째 줄',heightMm:45}]]){
    payload.settings.figures=bad;await assert.rejects(()=>generateHwpx(payload),/그림·그래프/);
  }
+ payload.settings.fontSizePt=60;payload.settings.figures=[{item:'결과',kind:'figure',caption:'제목',heightMm:20}];
+ await assert.rejects(()=>generateHwpx(payload),/빈 영역/);
 });
 
 test("an untitled form keeps an editable blank title and a usable filename", async () => {

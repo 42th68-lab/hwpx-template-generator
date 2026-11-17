@@ -361,6 +361,8 @@ export function validateSettings(settings) {
       if(!figure||typeof figure!=='object'||!Array.isArray(settings.requiredItems)||!settings.requiredItems.includes(figure.item)||!['figure','graph'].includes(figure.kind)||typeof figure.caption!=='string'||figure.caption.length>160||/[\x00-\x1f]/.test(figure.caption)||typeof figure.heightMm!=='number'||!Number.isFinite(figure.heightMm)||figure.heightMm<20||figure.heightMm>120){
         warn('invalid','figures','그림·그래프의 항목·종류·캡션(한 줄, 160자 이내)과 높이(20~120mm)를 확인해 주세요.');break;
       }
+      const minimum=Math.max(settings.fontSizePt,documentLineHeight(settings.fontSizePt,settings.lineSpacing))+4;
+      if(hwpMm(figure.heightMm)<minimum)warn('invalid','figures',`${figure.item}: 빈 영역이 현재 글자 크기·줄 간격보다 작습니다. 공간 높이를 늘리거나 글자 크기·줄 간격을 줄여 주세요.`);
     }
   }
   if(options!=null && (typeof options!=='object' || typeof options.coverPage!=='boolean' || typeof options.contentsPage!=='boolean' || !Array.isArray(options.tableItems) || options.tableItems.length>50 || options.tableItems.some(item=>typeof item!=='string' || !(Array.isArray(settings.requiredItems)&&settings.requiredItems.includes(item))) || (options.numberedItems!=null&&typeof options.numberedItems!=='boolean'))) warn('invalid','documentOptions','표지·목차 설정과 표로 작성할 항목을 확인해 주세요. 표 항목은 필수 항목 이름과 같아야 합니다.');

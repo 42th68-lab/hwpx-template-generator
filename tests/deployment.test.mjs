@@ -10,7 +10,29 @@ import { timedRequest, requestJson, generatedFileBytes } from '../upload-limits.
 import { versionWebAssets } from '../scripts/build-web.mjs';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
+import { SCHOOL_TEMPLATES, schoolTemplateSettings, validateSettings } from '../settings-model.js';
 const prompt = "A4 세로, 모든 여백 20mm, 글꼴 맑은 고딕, 본문 10pt, 줄 간격 160%. 필수 항목: 목적, 방법, 결과.";
+
+test('all school templates generate without analysis, preserve edits and keep independent defaults',async()=>{
+ const handler=createApiHandler({analysisOptions:{env:{}}});
+ assert.deepEqual(SCHOOL_TEMPLATES.map(template=>template.name),['탐구 보고서','실험 보고서','활동 소감문']);
+ for(const template of SCHOOL_TEMPLATES){
+   const settings=schoolTemplateSettings(template.id);
+   assert.deepEqual(validateSettings(settings),[]);
+   const generate=async()=>{const response=await handler(new Request('https://test.invalid/api/hwpx',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({settings,title:settings.documentTitle,confirmed:true})}));assert.equal(response.status,200);const body=await response.json();assert((await validateHwpx(Buffer.from(body.fileBase64,'base64'))).passed);return body;};
+   const original=await generate();
+   assert.deepEqual(original.appliedSettings.requiredItems,template.items);
+   assert.equal(original.renderPlan.pages.length,1);
+   settings.fontSizePt=12;settings.marginsMm.left=25;settings.lineSpacing.value=180;settings.requiredItems.push('추가 항목');settings.documentTitle='수정 제목';
+   const edited=await generate();
+   assert.equal(edited.renderPlan.bodySize,12);assert.equal(edited.appliedSettings.marginsMm.left,25);assert.equal(edited.appliedSettings.lineSpacing.value,180);assert.equal(edited.renderPlan.title,'수정 제목');
+   assert(edited.renderPlan.paragraphs.some(block=>block.item==='추가 항목'));
+   const fresh=schoolTemplateSettings(template.id);
+   assert.equal(fresh.fontSizePt,11);assert.equal(fresh.marginsMm.left,20);assert.deepEqual(fresh.requiredItems,template.items);
+   const blocked=await handler(new Request('https://test.invalid/api/hwpx',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({settings,confirmed:false})}));
+   assert.equal(blocked.status,422);
+ }
+});
 
 test('one build versions HTML and every transitive browser module together',()=>{
  const sources=new Map([['index.html','<head></head><link href="styles.css"><script src="app.js"></script>'],['styles.css','body{}'],['app.js','import {x} from "./settings-model.js"; import "./library-ui.js";'],['settings-model.js','export const x=1;'],['library-ui.js',"import {x} from './settings-model.js';"]]);

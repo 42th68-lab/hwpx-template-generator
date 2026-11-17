@@ -7,6 +7,27 @@ export const PAPER_SIZES = {
 export const DOCUMENT_LAYOUT_VERSION = 5;
 export const UNTITLED_FORM_NAME = '문서 양식';
 
+export const SCHOOL_TEMPLATES = [
+  {id:'inquiry',name:'탐구 보고서',items:['탐구 주제','탐구 동기 및 목적','탐구 방법','탐구 결과','결론 및 제언','참고 자료']},
+  {id:'experiment',name:'실험 보고서',items:['실험 목적','실험 가설','준비물','실험 과정','실험 결과','결론 및 고찰']},
+  {id:'reflection',name:'활동 소감문',items:['활동 개요','활동 내용','배운 점','느낀 점','앞으로의 계획']},
+];
+
+export function schoolTemplateSettings(id) {
+  const template=SCHOOL_TEMPLATES.find(template=>template.id===id);
+  if(!template)throw new Error('기본 템플릿을 찾을 수 없습니다.');
+  return {
+    schemaVersion:1,documentTitle:template.name,
+    paper:{size:'A4',orientation:'portrait'},
+    marginsMm:{top:20,bottom:20,left:20,right:20},
+    fontFamily:'맑은 고딕',fontSizePt:11,lineSpacing:{value:160,unit:'percent'},
+    typography:{titleSizePt:18,headingSizePt:12},
+    alignment:{title:'center',heading:'left',body:'justify'},
+    requiredItems:[...template.items],
+    documentOptions:{coverPage:false,contentsPage:false,tableItems:[],numberedItems:true},
+  };
+}
+
 export function savedDocumentTitle(form) {
   // Older untitled records stored the library label as their title.
   return form.settings.documentTitle ?? (form.title===UNTITLED_FORM_NAME?'':form.title);

@@ -22,7 +22,7 @@
     <main>
       <section class="hero" aria-labelledby="page-title">
         <h1 id="page-title">문서 양식 만들기</h1>
-        <p class="hero-copy">제출 조건을 입력하거나 안내문을 첨부하세요.</p>
+        <p class="hero-copy">기본 템플릿을 선택하거나 제출 조건을 입력하세요.</p>
       </section>
       <nav class="workflow-steps" aria-label="양식 만들기 단계">
         <a href="#conditions-input" data-step="1" aria-current="step"><span>1</span> 조건 입력</a>
@@ -30,7 +30,12 @@
         <a href="#hwpx-title" data-step="3"><span>3</span> 양식 생성</a>
       </nav>
       <section class="workspace input-workspace" id="conditions-input" aria-label="양식 생성 조건 입력">
-        <div class="workspace-heading"><h2>조건 입력</h2><button id="toggle-input" type="button" class="text-button" hidden>입력 수정</button></div>
+        <div class="workspace-heading"><h2>양식 시작하기</h2><button id="toggle-input" type="button" class="text-button" hidden>입력 수정</button></div>
+        <section class="school-templates" aria-labelledby="school-templates-title">
+          <h3 id="school-templates-title">기본 템플릿</h3>
+          <p id="school-templates-note">조건 입력 없이 선택하고 설정을 확인하세요. 학교의 공식 규정이 아닌 수정 가능한 추천 설정입니다.</p>
+          <div id="school-template-list" class="school-template-list" aria-describedby="school-templates-note"></div>
+        </section>
         <p id="input-summary" class="input-summary" hidden></p>
         <form id="template-form" novalidate>
           <div class="field-group">
@@ -82,8 +87,20 @@
         </form>
       </section>
 
+      <dialog id="replace-template-dialog" aria-labelledby="replace-template-title" aria-describedby="replace-template-description">
+        <form method="dialog">
+          <h2 id="replace-template-title">기본 템플릿으로 바꿀까요?</h2>
+          <p id="replace-template-description"></p>
+          <div class="library-toolbar">
+            <button type="submit" value="cancel" class="secondary-button" autofocus>계속 작성하기</button>
+            <button type="submit" value="replace" class="secondary-button">템플릿으로 바꾸기</button>
+          </div>
+        </form>
+      </dialog>
+
       <section class="result-panel" id="input-result" aria-labelledby="result-title" hidden>
         <div class="result-heading"><h2 id="result-title">문서 설정</h2><span id="analysis-engine" class="engine-badge"></span></div>
+        <p id="preset-settings-note" class="config-note" hidden>기본 템플릿의 추천 설정입니다. 항목과 서식을 자유롭게 수정하고, 학교 제출 규정이 있으면 그 규정에 맞춰 주세요.</p>
         <p id="settings-state" class="settings-state" role="status" aria-live="polite"></p>
         <div class="warning-panel" aria-labelledby="warnings-title">
           <h3 id="warnings-title">확인이 필요한 조건</h3>

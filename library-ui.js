@@ -66,7 +66,8 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
     }catch(error){if(version===searchVersion){$('public-status').textContent=error.message;$('public-templates').replaceChildren();$('public-next').disabled=true;}}
   }
   $('save-template').addEventListener('click',action(async()=>{const item=await saveForm({...snapshot(),id:activeId});activeId=item.id;await renderSaved();status.textContent=`‘${item.title}’을 이 브라우저에 저장했습니다.`;}));
-  $('new-template').addEventListener('click',()=>{activeId=null;onReset();status.textContent='새 양식을 시작합니다.';});
+  function startNew() {activeId=null;onReset();status.textContent='새 양식을 시작합니다.';}
+  $('new-template').addEventListener('click',startNew);
   $('saved-search').addEventListener('input',action(renderSaved));
   $('backup-templates').addEventListener('click',action(async()=>{const items=await allForms();download(new Blob([JSON.stringify(backupDocument(items),null,2)],{type:'application/json'}),'한폼_양식_백업.json');status.textContent='백업을 내려받았습니다. 다른 컴퓨터에서는 ‘백업 가져오기’를 사용하세요.';}));
   $('import-templates').addEventListener('change',action(async()=>{const file=$('import-templates').files[0];if(!file)return;try{if(file.size>20000000)throw new Error('백업 파일은 20MB 이하로 선택해 주세요.');let raw;try{raw=JSON.parse(await file.text());}catch{throw new Error('백업 JSON을 읽을 수 없습니다.');}const count=await importBackup(raw);await renderSaved();status.textContent=`${count}개 양식을 가져왔습니다. HWPX는 내려받을 때 다시 생성합니다.`;}finally{$('import-templates').value='';}}));
@@ -86,4 +87,5 @@ export function initializeLibrary({snapshot,onLoad,onReset,canSave=()=>true}) {
   renderSaved().catch(report);
   const sharedId=new URL(location.href).searchParams.get('template');
   if(sharedId)api({op:'get',id:sharedId}).then(({item})=>{cleanDocument(item);activeId=null;onLoad(item);status.textContent='공유 양식을 열었습니다. 내 양식에 저장하면 별도로 수정할 수 있습니다.';}).catch(report);
+  return {startNew};
 }

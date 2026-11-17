@@ -815,6 +815,15 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline:3px solid
 }
 
 /* Page geometry comes from the same layout plan as the HWPX writer. */
+.school-templates { margin:0 0 24px; }
+.school-templates h3 { margin:0 0 8px; font-size:15px; }
+.school-templates p { margin:0 0 14px; font-size:13px; color:var(--muted); line-height:1.7; }
+.school-template-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.school-template-button { padding:14px; border:1px solid var(--line); border-radius:10px; background:white; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+.school-template-button:hover { border-color:var(--accent); background:#f4f6ff; }
+.school-template-button strong { display:block; font-size:14px; margin-bottom:7px; }
+.school-template-button span { display:block; font-size:12px; color:var(--muted); line-height:1.65; }
+@media(max-width:640px) { .school-template-list { grid-template-columns:1fr; } }
 .preview-pages { display: grid; gap: 18px; }
 .preview-planned-paper { position: relative; padding: 0 !important; overflow: hidden; box-sizing: content-box; }
 .preview-planned-paper .preview-paragraph { position: absolute; margin: 0; padding: 0; white-space: pre; font-family: inherit; letter-spacing: normal; text-transform: none; }

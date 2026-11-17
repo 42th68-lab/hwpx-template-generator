@@ -1,4 +1,4 @@
-import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField, reconcileItemReferences, UNTITLED_FORM_NAME, savedDocumentTitle } from "./settings-model.js";
+import { FIELD_LABELS, ALIGNMENTS, formatSetting, getSetting, setSetting, validateSettings, isNumericField, sectionField, reconcileItemReferences, UNTITLED_FORM_NAME, savedDocumentTitle, SCHOOL_TEMPLATES, schoolTemplateSettings } from "./settings-model.js";
 import { renderDocumentPreview } from "./document-preview.js";
 import { UPLOAD_LIMITS, checkUploadLimits, timedRequest, generatedFileBytes } from "./upload-limits.js";
 import { initializeLibrary } from "./library-ui.js";
@@ -36,7 +36,7 @@ const inputSummary=document.querySelector('#input-summary'),toggleInput=document
 function collapseInput(collapsed) {
   form.hidden=collapsed;inputSummary.hidden=!collapsed;toggleInput.hidden=!analysis;
   toggleInput.textContent=collapsed?'입력 수정':'접기';toggleInput.setAttribute('aria-expanded',String(!collapsed));
-  inputSummary.textContent=[requirements.value.trim().replace(/\s+/g,' ').slice(0,110),selectedFiles.length?`첨부 ${selectedFiles.length}개`:null].filter(Boolean).join(' · ')||'저장된 문서 설정';
+  inputSummary.textContent=analysis?.engine==='preset'?`${analysis.templateName} · 추천 설정`:[requirements.value.trim().replace(/\s+/g,' ').slice(0,110),selectedFiles.length?`첨부 ${selectedFiles.length}개`:null].filter(Boolean).join(' · ')||'저장된 문서 설정';
   document.body.classList.toggle('has-analysis',Boolean(analysis));
 }
 toggleInput.addEventListener('click',()=>collapseInput(!form.hidden));
@@ -354,7 +354,7 @@ function appendResultBlock(title, details, content) {
 
 function fillSettingsControls() {
   renderSectionControls();
-  if(settings.documentTitle!=null)documentTitle.value=settings.documentTitle;
+  documentTitle.value=settings.documentTitle ?? '';
   numberedControl.checked=settings.documentOptions?.numberedItems!==false;
   for (const [path, control] of Object.entries(controls)) {
     const value = getSetting(settings, path);
@@ -369,7 +369,8 @@ function fillSettingsControls() {
   advancedDetails.open=advancedFields.some(group=>Object.values(settings[group]||{}).some(value=>value!=null))||Boolean(settings.sectionStyles?.length);
   sectionDetails.open=Boolean(settings.sectionStyles?.some(s=>s.alignment||s.fontSizePt||s.maxLines));
   extraDetails.open=Boolean(settings.documentOptions?.coverPage||settings.documentOptions?.contentsPage||settings.documentOptions?.tableItems?.length);
-  document.querySelector('#analysis-engine').textContent=analysis.engine==='gemini'?'AI 분석':analysis.engine==='saved'?'저장한 양식':'기본 분석';
+  document.querySelector('#analysis-engine').textContent=analysis.engine==='preset'?'기본 템플릿':analysis.engine==='gemini'?'AI 분석':analysis.engine==='saved'?'저장한 양식':'기본 분석';
+  document.querySelector('#preset-settings-note').hidden=analysis.engine!=='preset';
 }
 
 function readSettingsControls() {
@@ -469,7 +470,7 @@ function refreshSettings() {
   settingsState.textContent = stale ? "입력이 변경되었습니다. 다시 분석해 주세요."
     : confirmed ? "설정 확정 완료 · 양식을 생성할 수 있습니다."
       : blocking ? `확인이 필요한 조건 ${remaining}개`
-        : '필수 조건 준비 완료 · 값을 검토한 뒤 확정하세요.';
+        : analysis.engine==='preset'?'추천 설정 준비 완료 · 값을 검토한 뒤 확정하세요.':'필수 조건 준비 완료 · 값을 검토한 뒤 확정하세요.';
   for(const link of document.querySelectorAll('.workflow-steps a')){
     const current=stale?1:confirmed?3:2;link.classList.toggle('is-complete',Number(link.dataset.step)<current);if(Number(link.dataset.step)===current)link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');
   }
@@ -553,7 +554,7 @@ hwpxButton.addEventListener("click", async () => {
   }
 });
 
-initializeLibrary({
+const library=initializeLibrary({
   canSave:()=>Boolean(settings&&confirmed&&!stale),
   snapshot() {
     if (!settings || !confirmed || stale) throw new Error('문서 설정을 먼저 확인하고 확정해 주세요.');
@@ -584,6 +585,39 @@ initializeLibrary({
     for(const link of document.querySelectorAll('.workflow-steps a')){link.classList.remove('is-complete');if(link.dataset.step==='1')link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');}
   },
 });
+
+const replaceTemplateDialog=document.querySelector('#replace-template-dialog');
+let pendingTemplateId=null;
+function applySchoolTemplate(id){
+  const template=SCHOOL_TEMPLATES.find(template=>template.id===id);
+  library.startNew();
+  analysis={engine:'preset',templateName:template.name,warnings:[]};
+  settings=schoolTemplateSettings(id);
+  reviewedFields=new Set();reviewedWarnings=new Set();
+  resultContent.replaceChildren();fillSettingsControls();refreshSettings();
+  inputResult.hidden=false;collapseInput(true);
+  inputResult.scrollIntoView({behavior:'smooth',block:'start'});confirmButton.focus({preventScroll:true});
+}
+replaceTemplateDialog.addEventListener('close',()=>{
+  const id=pendingTemplateId;pendingTemplateId=null;
+  if(replaceTemplateDialog.returnValue==='replace'&&id)applySchoolTemplate(id);
+});
+for(const template of SCHOOL_TEMPLATES){
+  const button=document.createElement('button');
+  button.type='button';button.className='school-template-button';button.dataset.template=template.id;
+  const name=document.createElement('strong');name.textContent=template.name;
+  const detail=document.createElement('span');detail.textContent=template.items.join(' · ');
+  button.append(name,detail);
+  button.addEventListener('click',()=>{
+    const hasDraft=Boolean(settings||requirements.value.trim()||selectedFiles.length||documentTitle.value.trim()||analysisController);
+    if(hasDraft){
+      pendingTemplateId=template.id;replaceTemplateDialog.returnValue='cancel';
+      document.querySelector('#replace-template-description').textContent=`작성 중인 입력·설정을 ‘${template.name}’ 추천 설정으로 바꿉니다. 저장하지 않은 변경 내용은 사라집니다.`;
+      replaceTemplateDialog.showModal();
+    }else applySchoolTemplate(template.id);
+  });
+  document.querySelector('#school-template-list').append(button);
+}
 
 downloadButton.addEventListener("click", () => {
   if (!confirmed || stale) return;
